@@ -57,6 +57,8 @@ Every gRPC call goes through one interceptor (`internal/authz/interceptor.go`) t
 
    `/api/x/me` then reports it in `disabledActions` on its own.
 4. **Route it.** Methods with an HTTP binding in `go.temporal.io/api` are served under `/api/v1` automatically. Methods without one need a handler in `internal/xapi`.
+
+   The class also governs the command console (`/api/x/console/invoke`): every unary WorkflowService or OperatorService method classed READ, WRITE or ADMIN is invocable there by name, under the same interceptor, and BLOCK keeps it out. There is no separate console list, so classify with that in mind. `TestConsoleRouteMatrix` sends every console method as every role.
 5. **Test it.** `TestEveryMethodClassified` fails until every method has a class. Update the expected sets in `TestWriteSetIsExact` or `TestAdminSetIsExact`. Add validator cases and denial cases. The route matrices check every binding for every role.
 6. **Document it.** Update `docs/api-contract.md` (bump `Contract-Version` when the contract changes) and, for new env variables, the README configuration table and `.env.example`.
 

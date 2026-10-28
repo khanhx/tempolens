@@ -13,6 +13,7 @@ How it differs from upstream:
 - **Server-enforced roles.** Logins through Dex (OIDC) get a `read`, `write` or `admin` role from their groups. Every gRPC call is authorized by RPC name in one interceptor that denies anything it does not know. Write actions are validated (mandatory reasons, safe batch variants only, typed confirmation for destructive ones), stamped with the user's identity, and written to an audit log.
 - **Beyond parity.** Cross-namespace lists, counts and search; find workflows by activity type, event type or failure text; a stuck-activity finder; honest sorting; a per-run timeline and a relationship graph.
 - **CLI parity in the browser.** Each action shows its equivalent `temporal` CLI command.
+- **Command console.** Run Temporal commands from the UI, in a `temporal` CLI-like syntax or as raw RPCs. There is no shell on the server: each command is one RPC through the same authorization, validation, confirmation and audit as every other action.
   - Start a workflow in three modes: start, execute (wait for the result, like `temporal workflow execute`) and signal-with-start.
   - Delete workflows, and complete or fail an activity by ID.
   - See task-queue partitions and worker versioning, and a cluster page with cluster info, server capabilities and Tempolens health.

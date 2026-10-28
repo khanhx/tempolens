@@ -1,4 +1,4 @@
-Contract-Version: 6
+Contract-Version: 7
 
 # Tempolens HTTP API contract
 
@@ -17,7 +17,7 @@ Change control: the frontend and tester request changes through the lead. The ba
 
   Otherwise the server answers 403 before any other processing. This applies in every mode, including auth disabled, and to `POST /auth/logout`.
 - `/api/v1/*` accepts `GET`, `POST` and `DELETE`. The `/api/x` routes accept the methods listed for them in section 3 (`GET` unless stated). Every other route accepts only `GET` and `HEAD`. Any other method returns 405.
-- Request bodies are limited to 4 MiB (413 above that).
+- Request bodies are limited to 4 MiB (413 above that); `POST /api/x/console/invoke` is limited to 1 MiB (3.9).
 - When auth is disabled (`TEMPOLENS_AUTH_DISABLED=true`, local dev only), every request must carry a `Host` of `localhost` or `127.0.0.1`, with any port. Any other `Host` gets 403 on every route.
 
 ### 1.2 Sessions
@@ -39,7 +39,7 @@ Change control: the frontend and tester request changes through the lead. The ba
 | 403 | Denied: role, env flag, forbidden variant, namespace guard, CSRF, Host | Show the message; do not retry |
 | 404 | Unknown route, or a Temporal NotFound | Show not found |
 | 405 | Method not allowed on that route | – |
-| 413 | Body over 4 MiB | – |
+| 413 | Body over 4 MiB (1 MiB on the console, 3.9) | – |
 | 429 | Per-principal or global limit reached. Carries `Retry-After: <seconds>` | Back off for `Retry-After` |
 | 501 | The Temporal server does not implement the RPC (for example Nexus or workflow pause on 1.24) | Show a "not available on this server" state |
 | 503 | Auth not ready (OIDC discovery pending), or Temporal unavailable | Show a retry state |
@@ -68,7 +68,7 @@ Every JSON error body, from `/api/v1`, `/api/x` and the middleware alike, has th
 { "code": 7, "message": "permission denied: role read cannot call TerminateWorkflowExecution", "details": [] }
 ```
 
-`code` is the gRPC code: 3 InvalidArgument (400), 5 NotFound (404), 7 PermissionDenied (403), 8 ResourceExhausted (429), 12 Unimplemented (405/501), 14 Unavailable (503), 16 Unauthenticated (401). `details` is always an array, possibly empty. The `message` wording is not part of the contract; clients must branch on the HTTP status and `code` only.
+`code` is the gRPC code: 3 InvalidArgument (400), 4 DeadlineExceeded (504), 5 NotFound (404), 7 PermissionDenied (403), 8 ResourceExhausted (429), 12 Unimplemented (405/501), 14 Unavailable (503), 16 Unauthenticated (401). `details` is always an array, possibly empty. The `message` wording is not part of the contract; clients must branch on the HTTP status and `code` only.
 
 A 429 `{code:8}` has two sources:
 - **Tempolens' own limits** (the `/api/x` rate, scan slots, graph budget, per-user streams) always send `Retry-After` in whole seconds.
@@ -203,7 +203,7 @@ Kept in the upstream shape for compatibility. New SPA code should use `/api/x/me
 
 Common rules:
 
-- `GET` only, except the routes in 3.8. Every RPC these handlers make goes through the same authorization as `/api/v1`, so read users can use every `GET /api/x` route, and the 3.8 write routes need the role their RPC requires.
+- `GET` only, except the routes in 3.8 and `POST /api/x/console/invoke` (3.9). Every RPC these handlers make goes through the same authorization as `/api/v1`, so read users can use every `GET /api/x` route, and the 3.8 write routes need the role their RPC requires.
 - Each principal is rate limited (`TEMPOLENS_XAPI_RPS`, default 5/s, burst 10) → 429 with `Retry-After`. `/api/x/graph` has its own budget instead (below).
 - Scans (`/search/*`) also take a process-wide slot (`TEMPOLENS_SCAN_MAX_INFLIGHT`, default 2) → 429 with `Retry-After: 5` when none is free.
 - Graph walks are interactive and have their own budget, shared with nothing else:
@@ -469,6 +469,56 @@ Query parameters override the same body fields.
 | `POST /api/x/search-attributes?namespace=` | OperatorService AddSearchAttributes | ADMIN | body `{"searchAttributes":{"<name>":"INDEXED_VALUE_TYPE_KEYWORD", …}}` |
 | `DELETE /api/x/search-attributes?namespace=&name=a&name=b` | OperatorService RemoveSearchAttributes | ADMIN | Needs `X-Tempolens-Confirm: a,b` (names in request order) |
 | `GET /api/x/task-queue-partitions?namespace=&taskQueue=` | ListTaskQueuePartitions | READ | – |
+
+### 3.9 Command console
+
+The console invokes Temporal RPCs by name. There is no shell and no CLI binary on the server: each call is one gRPC call on the same intercepted connection as every other route, so roles, env flags, the namespace guard, validators, confirmation and reason headers (1.6), identity stamping, metadata replacement and audit apply unchanged.
+
+**Allowlist.** The console accepts exactly the unary RPCs of `temporal.api.workflowservice.v1.WorkflowService` and `temporal.api.operatorservice.v1.OperatorService` that the authorization policy classes READ, WRITE or ADMIN. The list is derived from the policy, so reclassifying an RPC changes the console with it. BLOCK RPCs, unclassified RPCs, streaming RPCs and every other service are refused with 403 before Temporal is called.
+
+#### `GET /api/x/console/methods`
+
+Any authenticated role. Returns the allowlist of this server, sorted by `service` then `name`:
+
+```json
+{ "methods": [
+  { "method": "/temporal.api.operatorservice.v1.OperatorService/DeleteNamespace", "service": "OperatorService", "name": "DeleteNamespace", "class": "ADMIN" },
+  { "method": "/temporal.api.workflowservice.v1.WorkflowService/DescribeNamespace", "service": "WorkflowService", "name": "DescribeNamespace", "class": "READ" }
+] }
+```
+
+- `service` is `WorkflowService` or `OperatorService`; `class` is `READ`, `WRITE` or `ADMIN`.
+- `class` is the static class. `StartBatchOperation` is listed as `WRITE`; its deletion variant needs admin when called.
+- The list does not reflect env flags or `TEMPOLENS_DISABLE_WRITE_ACTIONS`; use `/api/x/me` (`disabledActions`) for those. A call to a disabled action gets 403.
+
+#### `POST /api/x/console/invoke`
+
+CSRF headers as for every non-GET request (1.1). Body (at most 1 MiB):
+
+```json
+{ "method": "/temporal.api.workflowservice.v1.WorkflowService/DescribeNamespace",
+  "request": { "namespace": "default" } }
+```
+
+- `method` is the full gRPC method name, `/<package>.<Service>/<Method>`.
+- `request` is the RPC's request message in `/api/v1` JSON form (lowerCamel field names, enum names, int64 as strings, payloads as `{"metadata":{…},"data":"<base64>"}`). Unknown fields → 400. Omitted or `null` means the empty request.
+- Destructive RPCs need `X-Tempolens-Confirm` (and workflow delete `X-Tempolens-Reason`) exactly as in 1.6; the target rules are the RPC's, for example the workflow ID for TerminateWorkflowExecution, the namespace for DeleteNamespace, the job ID for a batch terminate or delete, and the comma-separated names for RemoveSearchAttributes.
+- Response `200`: the RPC's response message in `/api/v1` JSON form, with no wrapper.
+- Every call is bounded by a 30 s timeout, so a long-poll (for example GetWorkflowExecutionHistory with `waitNewEvent`, or PollWorkflowExecutionUpdate) returns at most after 30 s, with 504 `{code:4}` if Temporal has not answered. A confirmed destructive call runs to completion even if the client disconnects, so its audit line carries the real result.
+- Rate limited by the `/api/x` per-principal limit (429 with `Retry-After`).
+
+Errors, all `google.rpc.Status` (1.5); checks run in this order and Temporal is called only when every one passes:
+
+| Status | When |
+|---|---|
+| 429 | `/api/x` rate limit |
+| 405 | Not `POST` (`GET` or `HEAD` for `/console/methods`) |
+| 413 `{code:3}` | Body over 1 MiB |
+| 400 `{code:3}` | Body is not one JSON object `{method, request}`, has another top-level field, or `method` is not of the form `/<package>.<Service>/<Method>` |
+| 403 `{code:7}` | `method` is not on the allowlist (BLOCK, unknown, streaming, another service). Writes an audit `deny` line (`code: PermissionDenied`, `reason: method not allowed in the console`) |
+| 400 `{code:3}` | `request` does not decode into the method's request message (unknown field, wrong type) |
+| 400/401/403 | The authorization, validator and confirmation checks of 1.4 steps 7–9 |
+| any | Temporal's own error, mapped as on `/api/v1` (for example 404, 501 for an RPC the server does not implement, 504 on the timeout) |
 
 ## 4. Auth routes
 
