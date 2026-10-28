@@ -26,6 +26,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"tempolens/internal/apierr"
+	"tempolens/internal/audit"
 	"tempolens/internal/auth"
 	"tempolens/internal/authz"
 	"tempolens/internal/config"
@@ -61,9 +62,11 @@ const (
 type Options struct {
 	Config *config.Config
 	// Conn is the intercepted Temporal connection.
-	Conn    grpc.ClientConnInterface
-	Keys    *auth.Keyring
-	Policy  *authz.Policy
+	Conn   grpc.ClientConnInterface
+	Keys   *auth.Keyring
+	Policy *authz.Policy
+	// Audit records console requests refused before any RPC.
+	Audit   *audit.Logger
 	Log     *slog.Logger
 	Version string
 }
@@ -72,10 +75,12 @@ type Options struct {
 // principal in the request context.
 type Handler struct {
 	cfg      *config.Config
+	conn     grpc.ClientConnInterface
 	wf       workflowservice.WorkflowServiceClient
 	op       operatorservice.OperatorServiceClient
 	keys     [][]byte
 	policy   *authz.Policy
+	audit    *audit.Logger
 	log      *slog.Logger
 	version  string
 	rate     *limits.Rate
@@ -98,10 +103,12 @@ func New(o Options) *Handler {
 	rps := o.Config.Limits.XAPIRPS
 	return &Handler{
 		cfg:      o.Config,
+		conn:     o.Conn,
 		wf:       workflowservice.NewWorkflowServiceClient(o.Conn),
 		op:       operatorservice.NewOperatorServiceClient(o.Conn),
 		keys:     o.Keys.PageTokenKeys(),
 		policy:   o.Policy,
+		audit:    o.Audit,
 		log:      o.Log,
 		version:  o.Version,
 		rate:     limits.NewRate(rps, int(math.Ceil(2*rps))),
@@ -130,7 +137,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		apierr.TooMany(w, int(math.Ceil(wait.Seconds())), "too many requests; slow down")
 		return
 	}
-	// Section 3.8 routes check their own methods; every other route is GET.
+	// Section 3.8 routes and the console invoke check their own methods; every other route is GET.
 	switch r.URL.Path {
 	case "/api/x/workflow":
 		h.deleteWorkflow(w, r)
@@ -143,6 +150,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case "/api/x/task-queue-partitions":
 		h.taskQueuePartitions(w, r)
+		return
+	case "/api/x/console/invoke":
+		h.consoleInvoke(w, r)
 		return
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -165,6 +175,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.withGraphSlot(p.Key(), h.graph)(w, r)
 	case "/api/x/history-export":
 		h.export(w, r)
+	case "/api/x/console/methods":
+		h.consoleMethods(w, r)
 	default:
 		apierr.Write(w, http.StatusNotFound, codes.NotFound, "no such API route")
 	}

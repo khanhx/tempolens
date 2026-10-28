@@ -3,6 +3,7 @@ package authz_test
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	namespacepb "go.temporal.io/api/namespace/v1"
 	"go.temporal.io/api/operatorservice/v1"
+	"go.temporal.io/api/temporalproto"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/genproto/googleapis/api/annotations"
 	"google.golang.org/protobuf/proto"
@@ -410,5 +412,55 @@ func TestXAPINamespaceDeleteSurvivesDisconnect(t *testing.T) {
 	}
 	if logs := env.Logs(); !strings.Contains(logs, `"method":"DeleteNamespace"`) || !strings.Contains(logs, `"code":"OK"`) {
 		t.Fatalf("audit lacks the real result: %s", logs)
+	}
+}
+
+// TestConsoleRouteMatrix sends every console method through
+// /api/x/console/invoke as every role: each role gets exactly its RPC class,
+// and Temporal is called only when allowed.
+func TestConsoleRouteMatrix(t *testing.T) {
+	cfg := testutil.AuthConfig(t)
+	cfg.Limits.XAPIRPS = 1000
+	env := testutil.NewEnv(t, cfg)
+	methods := authz.ConsoleMethods()
+	if len(methods) < 50 {
+		t.Fatalf("console allowlist too small: %d", len(methods))
+	}
+	for _, m := range methods {
+		req, _ := newRequest(t, m.Method)
+		reqJSON, err := temporalproto.CustomJSONMarshalOptions{}.Marshal(req)
+		if err != nil {
+			t.Fatalf("%s: marshal: %v", m.Name, err)
+		}
+		body := `{"method":"` + m.Method + `","request":` + string(reqJSON) + `}`
+		in := authz.IntentFrom(confirmed(context.Background(), m.Method, req))
+		rule, _ := authz.Lookup(m.Method)
+		if rule.DynamicClass != nil {
+			rule.Class = rule.DynamicClass(req)
+		}
+		for _, who := range []testutil.Who{testutil.Nobody, testutil.Reader, testutil.Writer, testutil.Admin} {
+			env.Fake.Reset()
+			r := env.NewRequest(t, who, http.MethodPost, "/api/x/console/invoke", body)
+			if in.HasConfirm {
+				r.Header.Set(authz.ConfirmHeader, url.PathEscape(in.Confirm))
+			}
+			r.Header.Set(authz.ReasonHeader, in.Reason)
+			w := env.Do(r)
+			calls := env.Fake.Calls()
+			switch {
+			case who == testutil.Nobody:
+				if w.Code != http.StatusUnauthorized || len(calls) != 0 {
+					t.Errorf("no session %s: status %d, %d backend calls", m.Name, w.Code, len(calls))
+				}
+			case !allowedFor(rule.Class, who):
+				if w.Code != http.StatusForbidden || len(calls) != 0 {
+					t.Errorf("who=%d %s: status %d (%s), %d backend calls; want 403 and none", who, m.Name, w.Code, w.Body.String(), len(calls))
+				}
+			default:
+				if len(calls) != 1 || calls[0].Method != m.Method {
+					t.Errorf("who=%d %s: status %d (%s), backend calls %v; want %s", who, m.Name, w.Code, w.Body.String(), calls, m.Method)
+				}
+			}
+		}
 	}
 }

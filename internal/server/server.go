@@ -106,7 +106,7 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 	// Exports count toward the per-principal stream cap.
 	// /api/x checks methods per route; the section 3.8 routes take POST and DELETE.
 	s.xapi = auth.RequireAPI(allow([]string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodDelete}, s.limitStreams(xapi.New(xapi.Options{
-		Config: o.Config, Conn: o.Conn, Keys: o.Keys, Policy: o.Policy, Log: o.Log, Version: o.Version,
+		Config: o.Config, Conn: o.Conn, Keys: o.Keys, Policy: o.Policy, Audit: o.Audit, Log: o.Log, Version: o.Version,
 	}))))
 	s.apiNotFound = auth.RequireAPI(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		apierr.Write(w, http.StatusNotFound, codes.NotFound, "no such API route")
