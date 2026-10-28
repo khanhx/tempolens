@@ -1,0 +1,17 @@
+.git
+.gitignore
+plans
+test
+docs
+bin
+**/node_modules
+web/dist
+# A local `make embed` copy must not leak stale assets into the image.
+internal/ui/dist/*
+!internal/ui/dist/PLACEHOLDER.txt
+.claude*
+.env*
+Dockerfile
+docker-compose.yml
+deploy
+.github

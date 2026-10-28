@@ -1,0 +1,15 @@
+.claude/settings.local.json
+.claude_sessions/
+.env
+# Local deployment config for your own cluster (issuer, groups, hostnames).
+deploy/local/
+node_modules/
+web/node_modules/
+web/dist/
+internal/ui/dist/*
+!internal/ui/dist/PLACEHOLDER.txt
+test/**/node_modules/
+test/**/out/
+bin/
+plans/
+/tempolens
