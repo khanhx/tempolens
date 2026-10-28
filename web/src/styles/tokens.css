@@ -1,0 +1,70 @@
+/*
+ * Design tokens. Each colour is declared once with light-dark(); the active
+ * scheme follows prefers-color-scheme unless [data-theme] on <html> pins it.
+ */
+:root {
+  color-scheme: light dark;
+
+  /* Surfaces and text */
+  --c-bg: light-dark(#f7f8fa, #0f1115);
+  --c-surface: light-dark(#ffffff, #171a21);
+  --c-surface-2: light-dark(#f0f2f5, #1e222b);
+  --c-border: light-dark(#d9dde3, #2c313c);
+  --c-text: light-dark(#1b1f24, #e6e8eb);
+  --c-text-muted: light-dark(#5b6470, #9aa3ae);
+  --c-accent: light-dark(#3b5bdb, #8ea2ff);
+  --c-accent-text: light-dark(#ffffff, #0f1115);
+  --c-focus: light-dark(#3b5bdb, #8ea2ff);
+  --c-hover: light-dark(rgb(59 91 219 / 0.08), rgb(142 162 255 / 0.12));
+  --c-selected: light-dark(rgb(59 91 219 / 0.14), rgb(142 162 255 / 0.2));
+
+  /* Feedback */
+  --c-danger: light-dark(#c92a2a, #ff8787);
+  --c-danger-bg: light-dark(#fff0f0, #3a1d1f);
+  --c-warning: light-dark(#a35a00, #ffc078);
+  --c-warning-bg: light-dark(#fff6e6, #3a2c17);
+  --c-info-bg: light-dark(#eef2ff, #1d2440);
+
+  /* Workflow execution statuses */
+  --c-status-running: light-dark(#1971c2, #74c0fc);
+  --c-status-completed: light-dark(#2b8a3e, #8ce99a);
+  --c-status-failed: light-dark(#c92a2a, #ff8787);
+  --c-status-canceled: light-dark(#5c636e, #adb5bd);
+  --c-status-terminated: light-dark(#d9480f, #ffa94d);
+  --c-status-continued: light-dark(#7048e8, #b197fc);
+  --c-status-timedout: light-dark(#e67700, #ffd43b);
+
+  /* Spacing (4 px scale) */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+
+  /* Type */
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+  --lh: 1.45;
+
+  /* Shape and layout */
+  --radius: 6px;
+  --radius-sm: 4px;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 4px 12px rgb(0 0 0 / 0.08);
+  --header-h: 48px;
+  --nav-w: 200px;
+  --nav-w-collapsed: 52px;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}

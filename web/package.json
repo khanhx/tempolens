@@ -1,0 +1,36 @@
+{
+  "name": "tempolens-web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Tempolens single-page app: a lightweight web UI for Temporal",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run --maxWorkers=3",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@preact/signals": "2.11.3",
+    "preact": "10.29.8",
+    "preact-iso": "2.12.2"
+  },
+  "devDependencies": {
+    "@babel/core": "7.29.7",
+    "@eslint/js": "10.0.1",
+    "@preact/preset-vite": "2.10.6",
+    "@types/node": "22.20.5",
+    "eslint": "10.13.0",
+    "globals": "17.13.0",
+    "happy-dom": "21.0.4",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}
