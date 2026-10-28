@@ -1,0 +1,2 @@
+The web build (web/dist) is copied into this directory by `make embed` and the
+Dockerfile. This placeholder keeps the go:embed pattern valid without a web build.
