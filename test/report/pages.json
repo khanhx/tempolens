@@ -1,0 +1,275 @@
+{
+  "_comment": "LOCAL TEST ONLY. Pages for the phase 11 comparison. Paths are upstream URL deep links, which Tempolens keeps. {run:<workflowId>} resolves at capture time to the latest run ID. expect is text that must be visible before the shot; a failed expect marks the capture failed in manifest.json. click and newClick are tabs or buttons to click first. highlight (new and read sides) and oldHighlight are text selectors whose measured boxes become overlays. readShot pages are captured from the role=read container. Pages marked newOnly have no upstream equivalent.",
+  "namespace": "tui-seed-a",
+  "pages": [
+    {
+      "id": "01-namespaces",
+      "caption": "Namespaces",
+      "old": "/namespaces",
+      "expect": "Namespaces",
+      "highlight": [
+        {
+          "selector": "text=Create namespace",
+          "label": "Admin only: create a namespace (disabled for write and read)"
+        }
+      ]
+    },
+    {
+      "id": "02-workflow-list",
+      "caption": "Workflow list",
+      "old": "/namespaces/tui-seed-a/workflows",
+      "expect": "seed-running-1",
+      "oldHighlight": [
+        {
+          "selector": "text=Run ID",
+          "label": "Run ID column, the upstream list"
+        }
+      ],
+      "highlight": [
+        {
+          "selector": "text=Run ID",
+          "label": "Run ID column, same layout"
+        }
+      ]
+    },
+    {
+      "id": "03-workflow-list-filtered",
+      "caption": "Workflow list, filtered to failed runs",
+      "old": "/namespaces/tui-seed-a/workflows?query=ExecutionStatus%3D%27Failed%27",
+      "expect": "seed-failed",
+      "highlight": [
+        {
+          "selector": "text=Failed, 24 h",
+          "label": "Quick filter: failed in the last 24 h"
+        }
+      ]
+    },
+    {
+      "id": "04-workflow-detail-summary",
+      "caption": "Workflow detail: summary and timeline",
+      "old": "/namespaces/tui-seed-a/workflows/seed-parent-1/{run:seed-parent-1}",
+      "expect": "seed-parent-1"
+    },
+    {
+      "id": "05-history-compact",
+      "caption": "History, compact view",
+      "old": "/namespaces/tui-seed-a/workflows/seed-parent-1/{run:seed-parent-1}/history",
+      "expect": "Compact"
+    },
+    {
+      "id": "06-history-json",
+      "caption": "History, JSON view",
+      "old": "/namespaces/tui-seed-a/workflows/seed-parent-1/{run:seed-parent-1}/history",
+      "click": "JSON",
+      "expect": "Event History || Download decoded",
+      "newClick": "JSON",
+      "note": "Upstream: history page JSON tab. New: run-level JSON tab (the ?json dump, inventory row 75); its body is not text-searchable, so the expect is the shared run header."
+    },
+    {
+      "id": "07-pending-activities",
+      "caption": "Pending activities (seed-stuck-1)",
+      "old": "/namespaces/tui-seed-a/workflows/seed-stuck-1/{run:seed-stuck-1}",
+      "click": "Pending Activities",
+      "newClick": "Pending activities",
+      "expect": "AlwaysFail",
+      "highlight": [
+        {
+          "selector": "text=Activity actions",
+          "label": "Complete and Fail by ID; no pause on 1.24"
+        }
+      ]
+    },
+    {
+      "id": "08-call-stack",
+      "caption": "Call stack",
+      "old": "/namespaces/tui-seed-a/workflows/seed-running-1/{run:seed-running-1}",
+      "click": "Call Stack",
+      "expect": "Call Stack"
+    },
+    {
+      "id": "09-query",
+      "caption": "Query (state)",
+      "old": "/namespaces/tui-seed-a/workflows/seed-running-1/{run:seed-running-1}",
+      "click": "Queries",
+      "newClick": "Query",
+      "expect": "state"
+    },
+    {
+      "id": "10-workers",
+      "caption": "Workers and pollers (task queue)",
+      "old": "/namespaces/tui-seed-a/workers",
+      "expect": "Workers || tempolens-seed",
+      "new": "/namespaces/tui-seed-a/task-queues/tempolens-seed",
+      "note": "New side uses the task queue page: /task-queues/:queue. The new UI has no namespace-level workers page."
+    },
+    {
+      "id": "11-relationships-vs-graph",
+      "caption": "Relationships (upstream) vs relationship graph (new)",
+      "old": "/namespaces/tui-seed-a/workflows/seed-parent-1/{run:seed-parent-1}",
+      "click": "Relationships",
+      "expect": "seed-parent-1"
+    },
+    {
+      "id": "12-schedules-list",
+      "caption": "Schedules list",
+      "old": "/namespaces/tui-seed-a/schedules",
+      "expect": "tempolens-seed-sched-active"
+    },
+    {
+      "id": "13-schedule-detail",
+      "caption": "Schedule detail",
+      "old": "/namespaces/tui-seed-a/schedules/tempolens-seed-sched-active",
+      "expect": "tempolens-seed-sched-active"
+    },
+    {
+      "id": "14-batch-list",
+      "caption": "Batch operations list",
+      "old": "/namespaces/tui-seed-a/batch-operations",
+      "expect": "tui-test-authz-batch"
+    },
+    {
+      "id": "15-task-queue",
+      "caption": "Task queue",
+      "old": "/namespaces/tui-seed-a/task-queues/tempolens-seed",
+      "expect": "tempolens-seed",
+      "highlight": [
+        {
+          "selector": "text=/partition/i",
+          "label": "Partitions (read-only)"
+        }
+      ]
+    },
+    {
+      "id": "16-namespace-detail-search-attributes",
+      "caption": "Namespace detail and search attributes",
+      "old": "/namespaces/tui-seed-a",
+      "expect": "SeedCustomer",
+      "highlight": [
+        {
+          "selector": "text=Add attribute",
+          "label": "Admin only: add or remove search attributes"
+        }
+      ]
+    },
+    {
+      "id": "17-start-workflow",
+      "caption": "Start workflow",
+      "old": "/namespaces/tui-seed-a/workflows/start-workflow",
+      "expect": "Start"
+    },
+    {
+      "id": "18-dark-workflow-list",
+      "caption": "Dark mode: workflow list",
+      "old": "/namespaces/tui-seed-a/workflows",
+      "expect": "seed-running-1",
+      "dark": true
+    },
+    {
+      "id": "19-all-namespaces",
+      "caption": "All namespaces (new only)",
+      "newOnly": true,
+      "new": "/workflows",
+      "expect": "All namespaces",
+      "highlight": [
+        {
+          "selector": "text=All namespaces",
+          "label": "Cross-namespace list, count chips summed"
+        }
+      ]
+    },
+    {
+      "id": "20-activity-event-search",
+      "caption": "Activity and event search (new only)",
+      "newOnly": true,
+      "new": "/search",
+      "expect": "Search",
+      "highlight": [
+        {
+          "selector": "text=Search",
+          "label": "Activity and event search"
+        }
+      ]
+    },
+    {
+      "id": "21-multi-run-gantt",
+      "caption": "Multi-run Gantt of the loaded list (new only)",
+      "newOnly": true,
+      "new": "/namespaces/tui-seed-a/workflows",
+      "newClick": "Timeline",
+      "expect": "seed-running-1"
+    },
+    {
+      "id": "22-cluster",
+      "caption": "Cluster: version, health, capabilities (new only)",
+      "newOnly": true,
+      "new": "/cluster",
+      "expect": "SERVER VERSION"
+    },
+    {
+      "id": "23-namespace-create-dialog",
+      "caption": "Create namespace dialog (new only, admin)",
+      "newOnly": true,
+      "new": "/namespaces",
+      "newClick": "Create namespace",
+      "expect": "Create a namespace"
+    },
+    {
+      "id": "24-run-trace",
+      "caption": "Run trace: Gantt and graph of one run (new only)",
+      "newOnly": true,
+      "new": "/namespaces/tui-seed-a/workflows/seed-parent-1/{run:seed-parent-1}/timeline",
+      "newClick": "Trace",
+      "expect": "seed-parent-1"
+    },
+    {
+      "id": "25-run-result",
+      "caption": "Run result tab (new only)",
+      "newOnly": true,
+      "new": "/namespaces/tui-seed-a/workflows/seed-parent-1/{run:seed-parent-1}/timeline",
+      "newClick": "Result",
+      "expect": "Result"
+    },
+    {
+      "id": "26-read-namespaces",
+      "caption": "Read role: namespaces, create disabled",
+      "readShot": true,
+      "new": "/namespaces",
+      "expect": "Create namespace",
+      "highlight": [
+        {
+          "selector": "text=Create namespace",
+          "label": "Disabled for the read role"
+        }
+      ]
+    },
+    {
+      "id": "27-read-namespace-detail",
+      "caption": "Read role: namespace detail, admin actions disabled",
+      "readShot": true,
+      "new": "/namespaces/tui-seed-a",
+      "expect": "Actions for you",
+      "highlight": [
+        {
+          "selector": "text=Add attribute",
+          "label": "Disabled for the read role"
+        }
+      ]
+    },
+    {
+      "id": "28-read-run-actions",
+      "caption": "Read role: run actions disabled",
+      "readShot": true,
+      "new": "/namespaces/tui-seed-a/workflows/seed-running-1/{run:seed-running-1}/timeline",
+      "newClick": "Actions",
+      "expect": "Actions"
+    },
+    {
+      "id": "29-read-pending-activity",
+      "caption": "Read role: pending activity actions disabled",
+      "readShot": true,
+      "new": "/namespaces/tui-seed-a/workflows/seed-stuck-1/{run:seed-stuck-1}",
+      "newClick": "Pending activities",
+      "expect": "AlwaysFail"
+    }
+  ]
+}

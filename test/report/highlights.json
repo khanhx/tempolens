@@ -1,0 +1,1 @@
+{"_comment": "LOCAL TEST ONLY. Hand-written overlay boxes. Empty: the overlays come from highlights-measured.json, which capture.spec.ts writes from the live pages."}

@@ -1,0 +1,17 @@
+{
+  "name": "tempolens-report",
+  "private": true,
+  "type": "module",
+  "description": "LOCAL TEST ONLY. Phase 11 comparison screenshots and the offline HTML report.",
+  "scripts": {
+    "capture": "playwright test capture.spec.ts",
+    "build": "node build-report.mjs",
+    "verify": "playwright test verify-report.spec.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}
