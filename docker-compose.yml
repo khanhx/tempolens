@@ -1,0 +1,30 @@
+# LOCAL DEVELOPMENT ONLY. Auth is disabled, so the port is bound to
+# 127.0.0.1 and the server accepts only localhost Host headers.
+#
+#   docker compose up --build                                    # read-only
+#   TEMPOLENS_AUTH_DISABLED_ROLE=write docker compose up --build  # write
+#
+# Temporal must be reachable at TEMPORAL_ADDRESS (default: the host's 7233).
+# TEMPOLENS_HOST_PORT changes the host port (still bound to 127.0.0.1).
+# The auth (Dex) end-to-end compose lives in test/dex/.
+# The project name is fixed so containers are named tempolens-*, whatever the checkout directory is called.
+name: tempolens
+
+services:
+  tempolens:
+    build: .
+    image: tempolens:local
+    ports:
+      - "127.0.0.1:${TEMPOLENS_HOST_PORT:-8234}:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-host.docker.internal:7233}
+      TEMPOLENS_AUTH_DISABLED: "true"
+      # Auth-disabled mode listens on 127.0.0.1 by default. Inside the
+      # container it must accept the port mapping; the host side above is
+      # still published on 127.0.0.1 only.
+      TEMPOLENS_LISTEN_ADDR: 0.0.0.0
+      TEMPOLENS_AUTH_DISABLED_ROLE: ${TEMPOLENS_AUTH_DISABLED_ROLE:-read}
+      TEMPOLENS_PUBLIC_ORIGIN: http://localhost:${TEMPOLENS_HOST_PORT:-8234}
+      TEMPOLENS_LOG_LEVEL: ${TEMPOLENS_LOG_LEVEL:-info}
