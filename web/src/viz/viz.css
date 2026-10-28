@@ -1,0 +1,252 @@
+/* Gantt and graph styles; colours come from tokens.css. */
+.gantt-scroll {
+  position: relative;
+  height: 60vh;
+  overflow: auto;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  background: var(--c-surface);
+}
+
+.gantt-axis {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  background: var(--c-surface-2);
+  border-bottom: 1px solid var(--c-border);
+}
+
+.gantt-label-head {
+  flex: none;
+  width: 300px;
+  padding: 2px var(--s-2);
+  font-weight: 600;
+}
+
+.gantt-body {
+  position: relative;
+  display: flex;
+}
+
+.gantt-labels {
+  flex: none;
+  width: 300px;
+  border-right: 1px solid var(--c-border);
+  will-change: transform;
+}
+
+.gantt-label {
+  height: 24px;
+  line-height: 24px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--fs-sm);
+}
+
+.gantt-bullet {
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+  color: var(--c-text-muted);
+}
+
+.gantt-svg {
+  flex: none;
+}
+
+.gantt-grid {
+  stroke: var(--c-border);
+  stroke-width: 1;
+}
+
+.gantt-tick {
+  stroke: var(--c-text-muted);
+}
+
+.gantt-tick-label,
+.gantt-retry {
+  font-size: 10px;
+  fill: var(--c-text-muted);
+}
+
+.gantt-now {
+  stroke: var(--c-accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.gantt-row.clickable {
+  cursor: pointer;
+}
+
+.gantt-row:hover rect,
+.gantt-row:hover polygon {
+  filter: brightness(1.15);
+}
+
+.gantt-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  font-size: var(--fs-sm);
+  color: var(--c-text-muted);
+}
+
+.swatch {
+  display: inline-block;
+  width: 12px;
+  height: 10px;
+  border-radius: 2px;
+  margin-left: var(--s-2);
+}
+
+.bar-running {
+  fill: var(--c-status-running);
+  background: var(--c-status-running);
+}
+.bar-completed {
+  fill: var(--c-status-completed);
+  background: var(--c-status-completed);
+}
+.bar-failed {
+  fill: var(--c-status-failed);
+  background: var(--c-status-failed);
+}
+.bar-canceled,
+.bar-unknown {
+  fill: var(--c-status-canceled);
+  background: var(--c-status-canceled);
+}
+.bar-terminated {
+  fill: var(--c-status-terminated);
+  background: var(--c-status-terminated);
+}
+.bar-timedout {
+  fill: var(--c-status-timedout);
+  background: var(--c-status-timedout);
+}
+.bar-continued {
+  fill: var(--c-status-continued);
+  background: var(--c-status-continued);
+}
+.bar-wait {
+  fill: var(--c-text-muted);
+  background: var(--c-text-muted);
+  opacity: 0.35;
+}
+.bar-open {
+  opacity: 0.85;
+}
+
+/* Graph */
+.graph-wrap {
+  position: relative;
+  height: 65vh;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  background: var(--c-surface);
+  overflow: hidden;
+  cursor: grab;
+}
+
+.graph-wrap:active {
+  cursor: grabbing;
+}
+
+.graph-node rect {
+  fill: var(--c-surface-2);
+  stroke: var(--c-border);
+  stroke-width: 1.5;
+}
+
+.graph-node.focus rect {
+  stroke: var(--c-accent);
+  stroke-width: 3;
+}
+
+.graph-node {
+  cursor: pointer;
+}
+
+.graph-node:hover rect {
+  fill: var(--c-hover);
+}
+
+.graph-node text {
+  font-size: 12px;
+  fill: var(--c-text);
+}
+
+.graph-node .graph-sub {
+  fill: var(--c-text-muted);
+  font-size: 11px;
+}
+
+.graph-edge {
+  fill: none;
+  stroke: var(--c-text-muted);
+  stroke-width: 1.5;
+}
+
+.graph-edge-continuedAsNew {
+  stroke-dasharray: 7 4;
+}
+
+.graph-edge-reset {
+  stroke-dasharray: 2 4;
+  stroke: var(--c-status-terminated);
+}
+
+.graph-edge-signal {
+  stroke: var(--c-accent);
+}
+
+.graph-edge-cancelRequest {
+  stroke: var(--c-status-failed);
+}
+
+.graph-edge-label {
+  font-size: 10px;
+  fill: var(--c-text-muted);
+}
+
+.dot-running {
+  fill: var(--c-status-running);
+}
+.dot-completed {
+  fill: var(--c-status-completed);
+}
+.dot-failed {
+  fill: var(--c-status-failed);
+}
+.dot-canceled,
+.dot-unknown {
+  fill: var(--c-status-canceled);
+}
+.dot-terminated {
+  fill: var(--c-status-terminated);
+}
+.dot-timedout {
+  fill: var(--c-status-timedout);
+}
+.dot-continued {
+  fill: var(--c-status-continued);
+}
+
+.graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  font-size: var(--fs-sm);
+  color: var(--c-text-muted);
+}
+
+.graph-legend svg {
+  vertical-align: middle;
+}
+
+.graph-arrow-head {
+  fill: var(--c-text-muted);
+}
