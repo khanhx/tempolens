@@ -1,0 +1,2 @@
+# Generated locally by gen-session-keys.sh. Never commit.
+dex/session-keys.env
