@@ -5,7 +5,7 @@ import { codecError } from '../payload/codec';
 import type { Payload } from '../payload/decode';
 import { LARGE_PAYLOAD_BYTES } from '../payload/decode';
 import type { MemoRow } from './memo-decode';
-import { decodeMemos, inferSortType, memoCellValue, memoReady, memoValue } from './memo-decode';
+import { decodeMemos, inferSortType, memoCellValue, memoCodecError, memoReady, memoValue } from './memo-decode';
 
 const json = (value: string): Payload => ({ metadata: { encoding: textToBase64('json/plain') }, data: textToBase64(value) });
 const encrypted = (value: string): Payload => ({ metadata: { encoding: textToBase64('binary/encrypted') }, data: textToBase64(value) });
@@ -23,6 +23,7 @@ function fakeCodec() {
 
 afterEach(() => {
   codecError.value = null;
+  memoCodecError.value = null;
 });
 
 describe('memoCellValue', () => {
@@ -75,7 +76,7 @@ describe('decodeMemos', () => {
       ]),
     );
     expect(rows.map((r) => memoValue(r, 'owner'))).toEqual(['alice', 'bob', 'carol']);
-    expect(codecError.value).toBeNull();
+    expect(memoCodecError.value).toBeNull();
 
     await decodeMemos(rows, ['owner', 'tag'], (r) => r.ns, cfg, fetchFn);
     expect(fetchFn).toHaveBeenCalledTimes(2);
@@ -95,7 +96,17 @@ describe('decodeMemos', () => {
     expect(await decodeMemos([r], ['owner', 'plain'], () => 'a', cfg, fetchFn)).toBe(2);
     expect(memoValue(r, 'owner')).toBe('[binary/encrypted payload]');
     expect(memoValue(r, 'plain')).toBe('p');
-    expect(codecError.value).toMatch(/502/);
+    expect(memoCodecError.value).toMatch(/502/);
+    // The shared codec error belongs to the payload views; a memo failure leaves it alone.
+    expect(codecError.value).toBeNull();
+  });
+
+  it('ignores a codec failure from another page and clears its own after a success', async () => {
+    codecError.value = 'failure from a run page';
+    memoCodecError.value = 'earlier memo failure';
+    await decodeMemos([row('a', { owner: encrypted('"alice"') })], ['owner'], () => 'a', cfg, fakeCodec());
+    expect(memoCodecError.value).toBeNull();
+    expect(codecError.value).toBe('failure from a run page');
   });
 });
 

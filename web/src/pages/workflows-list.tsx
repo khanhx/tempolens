@@ -432,6 +432,8 @@ export default function WorkflowsList() {
   const update = (patch: Partial<ListState>) => route(path + listSearch({ ...state, ...patch }));
 
   const [sa, setSa] = useState<NamespaceSearchAttributes>({ types: FALLBACK_TYPES, custom: [] });
+  // Until the attribute list arrives, `sa:` ids cannot be checked, so they are kept rather than dropped.
+  const [saLoaded, setSaLoaded] = useState(false);
   const [missingAttrs, setMissingAttrs] = useState<Record<string, string[]>>({});
   const [reportedProblems, setReportedProblems] = useState(false);
   const selection: NamespaceSelection = state.ns?.length ? state.ns : '*';
@@ -444,11 +446,13 @@ export default function WorkflowsList() {
     const names = selection === '*' ? allNames.split(',').filter(Boolean) : [...selection];
     if (names.length === 0) return;
     let cancelled = false;
+    setSaLoaded(false);
     Promise.all(names.map((n) => searchAttributes(n).then((v) => [n, v] as const))).then(
       (pairs) => {
         if (cancelled) return;
         const common = commonAttributes(Object.fromEntries(pairs));
         setSa({ types: { ...FALLBACK_TYPES, ...common.types }, custom: common.custom });
+        setSaLoaded(true);
         setMissingAttrs(common.missing);
       },
       () => undefined,
@@ -461,8 +465,13 @@ export default function WorkflowsList() {
   useEffect(() => {
     if (cross) return;
     let cancelled = false;
+    setSaLoaded(false);
     searchAttributes(ns).then(
-      (v) => !cancelled && setSa(v),
+      (v) => {
+        if (cancelled) return;
+        setSa(v);
+        setSaLoaded(true);
+      },
       () => undefined,
     );
     describeNamespace(ns).then(
@@ -488,7 +497,7 @@ export default function WorkflowsList() {
   );
   // URL > saved preference > default; ids that name no column (any more) are dropped.
   const fixedIds = new Set(fixedColumns.map((c) => c.id));
-  const visibleIds = resolveColumns([state.cols, loadColumns(prefsKey)], cross ? ['namespace', ...DEFAULT_COLUMNS] : DEFAULT_COLUMNS, (id) => fixedIds.has(id) || isMemoId(id));
+  const visibleIds = resolveColumns([state.cols, loadColumns(prefsKey)], cross ? ['namespace', ...DEFAULT_COLUMNS] : DEFAULT_COLUMNS, (id) => fixedIds.has(id) || isMemoId(id) || (!saLoaded && id.startsWith('sa:')));
   const visibleMemoKeys = visibleIds.filter(isMemoId).map(memoKeyOf);
   const memoKeysKey = JSON.stringify(visibleMemoKeys);
   const memoModule = useLazyModule(() => import('../lib/table/memo-decode'), visibleMemoKeys.length > 0);
@@ -778,9 +787,9 @@ export default function WorkflowsList() {
         </p>
       )}
       {memoModule instanceof Error && <p class="alert alert-error">Could not load memo decoding: {memoModule.message}</p>}
-      {memo?.codecError.value && (
+      {memo?.memoCodecError.value && (
         <p class="alert alert-error" role="alert">
-          Memo values could not be decoded by the codec server; they are shown undecoded. <span class="muted">({memo.codecError.value})</span>
+          Memo values could not be decoded by the codec server; they are shown undecoded. <span class="muted">({memo.memoCodecError.value})</span>
         </p>
       )}
 

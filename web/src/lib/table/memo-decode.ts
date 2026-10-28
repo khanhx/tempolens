@@ -3,13 +3,17 @@
 // memo column is visible. Each payload is decoded once (cached by object), and
 // a load sends one codec request per namespace, never one per cell.
 import type { CodecConfig } from '../payload/codec';
-import { activeCodec, codecError, codecRequest } from '../payload/codec';
+import { signal } from '@preact/signals';
+import { activeCodec, codecRequest } from '../payload/codec';
 import type { Payload } from '../payload/decode';
 import { decodePayload } from '../payload/decode';
 import type { SortType } from '../sort';
 
-/** Re-exported so the list page can show codec failures without loading codec.ts up front. */
-export { codecError };
+/**
+ * Last codec failure of a memo decode; null after a success. Separate from the
+ * shared `codecError`, so the list never shows a failure from another page.
+ */
+export const memoCodecError = signal<string | null>(null);
 
 export interface MemoRow {
   memo?: { fields?: Record<string, Payload> };
@@ -40,7 +44,7 @@ export function memoValue(row: MemoRow, key: string): unknown {
 
 /**
  * Decodes the `keys` memos of `rows` that are not decoded yet and returns how
- * many it decoded. A codec failure sets `codecError` and falls back to the
+ * many it decoded. A codec failure sets `memoCodecError` and falls back to the
  * undecoded payloads, as the payload views do.
  */
 export async function decodeMemos<R extends MemoRow>(
@@ -66,9 +70,9 @@ export async function decodeMemos<R extends MemoRow>(
       if (cfg) {
         try {
           out = await codecRequest('decode', originals, ns, cfg, fetchFn);
-          codecError.value = null;
+          memoCodecError.value = null;
         } catch (err) {
-          codecError.value = err instanceof Error ? err.message : String(err);
+          memoCodecError.value = err instanceof Error ? err.message : String(err);
         }
       }
       originals.forEach((p, i) => {
