@@ -13,7 +13,8 @@
     "build": "vite build",
     "test": "vitest run --maxWorkers=3",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "budget": "node scripts/check-budget.mjs"
   },
   "dependencies": {
     "@preact/signals": "2.11.3",
