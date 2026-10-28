@@ -1,0 +1,56 @@
+# LOCAL TEST ONLY. Not for production. Every secret and password here is a throwaway test value.
+issuer: http://localhost:5599/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5599
+
+telemetry:
+  http: 0.0.0.0:5600
+
+oauth2:
+  skipApprovalScreen: true
+  passwordConnector: local
+
+enablePasswordDB: true
+
+staticClients:
+  - id: tempolens-test
+    name: Tempolens local test client
+    # LOCAL TEST ONLY secret, not for production.
+    secret: tempolens-local-test-secret-not-for-production
+    redirectURIs:
+      - http://localhost:8236/auth/sso/callback
+
+staticPasswords:
+  # LOCAL TEST ONLY. Each hash is bcrypt of the throwaway test password "password". Not for production.
+  - email: writer@example.test
+    hash: "$2a$10$57DhzV7eqW.C3IT2br079Oujrtx3rqBraPqWttnoWMrkO2X.k4bJO"
+    username: writer
+    userID: 1001-writer
+    groups:
+      - "tempolens-test:Platform Team"
+  - email: reader@example.test
+    hash: "$2a$10$57DhzV7eqW.C3IT2br079Oujrtx3rqBraPqWttnoWMrkO2X.k4bJO"
+    username: reader
+    userID: 1002-reader
+    groups:
+      - "tempolens-test:Some Team"
+  - email: nogroups@example.test
+    hash: "$2a$10$57DhzV7eqW.C3IT2br079Oujrtx3rqBraPqWttnoWMrkO2X.k4bJO"
+    username: nogroups
+    userID: 1003-nogroups
+  - email: admin@example.test
+    hash: "$2a$10$57DhzV7eqW.C3IT2br079Oujrtx3rqBraPqWttnoWMrkO2X.k4bJO"
+    username: admin
+    userID: 1005-admin
+    groups:
+      - "tempolens-test:Admins"
+  - email: padded@example.test
+    hash: "$2a$10$57DhzV7eqW.C3IT2br079Oujrtx3rqBraPqWttnoWMrkO2X.k4bJO"
+    username: padded
+    userID: 1004-padded
+    groups:
+      - " tempolens-test:Platform Team"

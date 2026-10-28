@@ -1,0 +1,49 @@
+# LOCAL TEST ONLY. Dedicated Dex for Tempolens tests on port 5599. Do not reuse.
+# The session key for the tempolens service comes from dex/session-keys.env, which
+# gen-session-keys.sh creates when it is missing (phase 9 adds the service).
+name: tempolens-e2e
+
+services:
+  dex:
+    image: dexidp/dex:v2.46.1
+    container_name: tempolens-test-dex
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    ports:
+      - "127.0.0.1:5599:5599"
+      - "127.0.0.1:8236:8080"
+    volumes:
+      - ./config.yaml:/etc/dex/config.yaml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5599/dex/.well-known/openid-configuration"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 2s
+
+  # The Tempolens server under test. It shares Dex's network namespace, so its OIDC discovery URL
+  # (localhost:5599) resolves to Dex, and Dex's published 8236 port reaches it on 8080.
+  tempolens:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: tempolens:local
+    network_mode: service:dex
+    depends_on:
+      dex:
+        condition: service_healthy
+    env_file:
+      - session-keys.env
+    environment:
+      TEMPORAL_ADDRESS: host.docker.internal:7233
+      TEMPOLENS_PORT: "8080"
+      TEMPOLENS_PUBLIC_ORIGIN: http://localhost:8236
+      TEMPOLENS_AUTH_PROVIDER_URL: http://localhost:5599/dex
+      TEMPOLENS_AUTH_CLIENT_ID: tempolens-test
+      TEMPOLENS_AUTH_CLIENT_SECRET: tempolens-local-test-secret-not-for-production
+      TEMPOLENS_AUTH_CALLBACK_URL: http://localhost:8236/auth/sso/callback
+      TEMPOLENS_AUTH_WRITE_GROUPS: "tempolens-test:Platform Team"
+      TEMPOLENS_AUTH_ADMIN_GROUPS: "tempolens-test:Admins"
+      TEMPOLENS_PROTECTED_NAMESPACES: "default,tui-test-protected"
+      TEMPOLENS_LOG_LEVEL: debug
