@@ -1,0 +1,181 @@
+.app {
+  display: grid;
+  grid-template-columns: var(--nav-w) 1fr;
+  grid-template-rows: var(--header-h) 1fr;
+  grid-template-areas:
+    'header header'
+    'nav main';
+  height: 100vh;
+}
+
+.app[data-nav='collapsed'] {
+  grid-template-columns: var(--nav-w-collapsed) 1fr;
+}
+
+.app-main {
+  grid-area: main;
+  overflow: auto;
+  min-width: 0;
+}
+
+/* Header */
+.header {
+  grid-area: header;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 0 var(--s-4);
+  background: var(--c-surface);
+  border-bottom: 1px solid var(--c-border);
+}
+
+.header-brand {
+  font-weight: 600;
+  font-size: var(--fs-lg);
+  color: var(--c-text);
+}
+
+.header-brand:hover {
+  text-decoration: none;
+}
+
+.header-spacer {
+  flex: 1;
+}
+
+.header-group {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.header-user {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  max-width: 260px;
+}
+
+.header-user-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-error {
+  color: var(--c-danger);
+  font-size: var(--fs-sm);
+}
+
+.route-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--c-accent);
+  animation: route-progress 1s ease-in-out infinite;
+  transform-origin: left;
+}
+
+@keyframes route-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* Navigation */
+.nav {
+  grid-area: nav;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  padding: var(--s-3) var(--s-2);
+  background: var(--c-surface);
+  border-right: 1px solid var(--c-border);
+  overflow-y: auto;
+}
+
+.nav-heading {
+  margin: var(--s-3) var(--s-2) var(--s-1);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Namespace names are case-sensitive: show them as they are. */
+.nav-heading-ns {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  height: 32px;
+  padding: 0 var(--s-2);
+  border-radius: var(--radius);
+  color: var(--c-text);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.nav-link:hover {
+  background: var(--c-hover);
+  text-decoration: none;
+}
+
+.nav-link[aria-current='page'] {
+  background: var(--c-selected);
+  font-weight: 600;
+}
+
+.nav-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+
+.nav-footer {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-1) 0;
+  font-size: var(--fs-xs);
+}
+
+.app[data-nav='collapsed'] .nav-label,
+.app[data-nav='collapsed'] .nav-heading,
+.app[data-nav='collapsed'] .nav-version {
+  display: none;
+}
+
+.app[data-nav='collapsed'] .nav-footer {
+  justify-content: center;
+}
+
+/* Full-screen states (loading, boot error) */
+.boot {
+  display: grid;
+  place-items: center;
+  height: 100vh;
+  padding: var(--s-5);
+}
+
+.boot-panel {
+  max-width: 520px;
+  display: grid;
+  gap: var(--s-3);
+}
