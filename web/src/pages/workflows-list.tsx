@@ -37,6 +37,9 @@ import type { NamespaceSearchAttributes } from '../lib/server-info';
 import { clusterInfo, describeNamespace, hasCapability, searchAttributes } from '../lib/server-info';
 import type { SortType } from '../lib/sort';
 import { sortRows, supportsOrderBy } from '../lib/sort';
+import { isMemoId, loadColumns, memoId, memoKeyOf, memoKeys, dropColumn, resolveColumns, saveColumns } from '../lib/table/columns';
+import type * as MemoDecode from '../lib/table/memo-decode';
+import { nextSort } from '../lib/table/sort-cycle';
 import type { WorkflowExecutionInfo } from '../lib/temporal';
 import { formatDuration, parseDuration } from '../lib/time';
 import { NamespaceErrorsBanner } from '../components/partial-banner';
@@ -74,6 +77,8 @@ interface ColumnDef {
   /** Search attribute for a server-side ORDER BY (Elasticsearch only). */
   sortField?: string;
   render?: (r: Row, ns: string) => preact.ComponentChildren;
+  tag?: string;
+  hint?: string;
 }
 
 const BASE_COLUMNS: ColumnDef[] = [
@@ -102,7 +107,7 @@ const BASE_COLUMNS: ColumnDef[] = [
   { id: 'run', label: 'Run ID', width: '22%', get: (r) => r.execution.runId, sortType: 'keyword', sortField: 'RunId', render: (r) => <code>{r.execution.runId}</code> },
   { id: 'type', label: 'Type', width: '16%', get: (r) => r.type?.name, sortType: 'keyword', sortField: 'WorkflowType' },
   { id: 'start', label: 'Start', width: '150px', get: (r) => r.startTime, sortType: 'datetime', sortField: 'StartTime', render: (r) => <Timestamp value={r.startTime} /> },
-  { id: 'end', label: 'End', width: '150px', get: (r) => r.closeTime, sortType: 'datetime', sortField: 'CloseTime', render: (r) => <Timestamp value={r.closeTime} /> },
+  { id: 'end', label: 'End (close time)', width: '150px', get: (r) => r.closeTime, sortType: 'datetime', sortField: 'CloseTime', render: (r) => <Timestamp value={r.closeTime} /> },
   {
     id: 'duration',
     label: 'Duration',
@@ -118,6 +123,7 @@ const BASE_COLUMNS: ColumnDef[] = [
   { id: 'transitions', label: 'State transitions', width: '120px', get: (r) => r.stateTransitionCount, sortType: 'int', sortField: 'StateTransitionCount', render: (r) => num(r.stateTransitionCount) },
   { id: 'task-queue', label: 'Task queue', width: '14%', get: (r) => r.taskQueue, sortType: 'keyword', sortField: 'TaskQueue' },
   { id: 'parent', label: 'Parent workflow', width: '18%', get: (r) => r.parentExecution?.workflowId, sortType: 'keyword', sortField: 'ParentWorkflowId' },
+  { id: 'root', label: 'Root workflow', width: '18%', get: (r) => r.rootExecution?.workflowId, sortType: 'keyword', sortField: 'RootWorkflowId' },
 ];
 
 const DEFAULT_COLUMNS = ['status', 'id', 'run', 'type', 'start', 'end'];
@@ -156,15 +162,60 @@ function attributeColumn(name: string, type: SAType): ColumnDef {
   };
 }
 
-const columnsKey = (ns: string) => `tempolens.columns.${ns}`;
+type MemoModule = typeof MemoDecode;
 
-function savedColumns(ns: string): string[] | null {
-  try {
-    const v: unknown = JSON.parse(localStorage.getItem(columnsKey(ns)) ?? 'null');
-    return Array.isArray(v) && v.every((x) => typeof x === 'string') && v.length > 0 ? v : null;
-  } catch {
-    return null;
-  }
+/** A memo column; values appear once the lazily loaded decoder has decoded them. */
+function memoColumn(key: string, memo: MemoModule | null, rows: readonly Row[]): ColumnDef {
+  const get = (r: Row) => memo?.memoValue(r, key);
+  const ready = (r: Row) => (memo ? memo.memoReady(r, key) : !r.memo?.fields?.[key]);
+  return {
+    id: memoId(key),
+    label: key,
+    width: '140px',
+    tag: 'memo',
+    hint: `Memo ${key}: display and client sort only; not server-filterable`,
+    get,
+    sortType: memo ? memo.inferSortType(rows.map(get)) : 'keyword',
+    render: (r) => (ready(r) ? display(get(r)) : <span class="muted">…</span>),
+  };
+}
+
+/** Says that a sort covers the loaded rows only, and why the server cannot sort. */
+function LocalSortNotice({ reason, loaded, more, loading, onMore }: { reason: string; loaded: number; more: number | null; loading: boolean; onMore: () => void }) {
+  return (
+    <div class="alert" role="status">
+      Sorted locally across {loaded.toLocaleString('en-US')} loaded rows (sorts loaded rows only) — {reason}.
+      {more !== null && loaded < CLIENT_SORT_WINDOW && (
+        <>
+          {' '}
+          <button type="button" class="btn btn-sm" disabled={loading} onClick={onMore}>
+            Load {more} more
+          </button>
+        </>
+      )}
+      {more !== null && loaded >= CLIENT_SORT_WINDOW && <> The sort window is full at {CLIENT_SORT_WINDOW} rows; narrow the query to sort the rest.</>}
+    </div>
+  );
+}
+
+/** The memo-key half of the column picker: a free-text key becomes a `memo:<key>` column. */
+function MemoKeyForm({ onAdd }: { onAdd: (key: string) => void }) {
+  const [key, setKey] = useState('');
+  return (
+    <form
+      class="menu-item"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (key.trim()) onAdd(key.trim());
+        setKey('');
+      }}
+    >
+      <input class="input" placeholder="Memo key" aria-label="Memo key" value={key} onInput={(e) => setKey((e.currentTarget as HTMLInputElement).value)} />
+      <button class="btn btn-sm" type="submit" disabled={!key.trim()}>
+        Add memo column
+      </button>
+    </form>
+  );
 }
 
 interface CountResponse {
@@ -429,14 +480,47 @@ export default function WorkflowsList() {
   const pageSize = cross ? Math.min(state.perPage, X_PAGE_SIZE_MAX) : state.perPage;
   const prefsKey = cross ? '*' : ns;
 
-  const allColumns = useMemo(
+  const [data, setData] = useState<ListData>({ rows: [], token: undefined, loading: true, error: null, errors: [] });
+
+  const fixedColumns = useMemo(
     () => [...(cross ? [NAMESPACE_COLUMN] : []), ...BASE_COLUMNS, ...sa.custom.map((n) => attributeColumn(n, sa.types[n] ?? 'Keyword'))],
     [sa, cross],
   );
-  const visibleIds = state.cols ?? savedColumns(prefsKey) ?? (cross ? ['namespace', ...DEFAULT_COLUMNS] : DEFAULT_COLUMNS);
+  // URL > saved preference > default; ids that name no column (any more) are dropped.
+  const fixedIds = new Set(fixedColumns.map((c) => c.id));
+  const visibleIds = resolveColumns([state.cols, loadColumns(prefsKey)], cross ? ['namespace', ...DEFAULT_COLUMNS] : DEFAULT_COLUMNS, (id) => fixedIds.has(id) || isMemoId(id));
+  const visibleMemoKeys = visibleIds.filter(isMemoId).map(memoKeyOf);
+  const memoKeysKey = JSON.stringify(visibleMemoKeys);
+  const memoModule = useLazyModule(() => import('../lib/table/memo-decode'), visibleMemoKeys.length > 0);
+  const memo = memoModule instanceof Error ? null : memoModule;
+  const [memoVersion, setMemoVersion] = useState(0);
+  const discoveredMemoKeys = useMemo(() => memoKeys(data.rows), [data.rows]);
+  // Serialised so the memo below only recomputes when the set of keys changes.
+  const memoKeysAll = JSON.stringify([...new Set([...discoveredMemoKeys, ...visibleMemoKeys])]);
+  const allColumns = useMemo(
+    () => [...fixedColumns, ...(JSON.parse(memoKeysAll) as string[]).map((k) => memoColumn(k, memo, data.rows))],
+    [fixedColumns, memoKeysAll, memo, memoVersion, data.rows],
+  );
+
+  // Memo payloads of the loaded rows are decoded once each, one batch per load.
+  useEffect(() => {
+    if (!memo || visibleMemoKeys.length === 0) return;
+    memo.decodeMemos(data.rows, visibleMemoKeys, (r) => rowNamespace(r, ns)).then(
+      (n) => n > 0 && setMemoVersion((v) => v + 1),
+      // decodeMemos handles codec failures itself; anything else leaves the cells pending.
+      () => undefined,
+    );
+  }, [memo, data.rows, memoKeysKey, ns]);
+
   const sortCol = state.sort ? allColumns.find((c) => c.id === state.sort?.column) : undefined;
+  // Elasticsearch sorts a column with a sort attribute; everything else sorts the loaded rows.
   const serverOrder = es && state.sort && sortCol?.sortField ? `ORDER BY ${sortCol.sortField} ${state.sort.dir.toUpperCase()}` : '';
-  const clientSort = !es && state.sort && sortCol?.sortType ? { col: sortCol, dir: state.sort.dir } : null;
+  const clientSort = !serverOrder && state.sort && sortCol?.sortType ? { col: sortCol, dir: state.sort.dir } : null;
+  const localSortReason = cross
+    ? 'the all-namespaces view cannot sort on the server'
+    : !es
+      ? 'SQL visibility cannot sort'
+      : `${sortCol?.label ?? 'this column'} cannot be sorted by the server`;
 
   // Relative ranges resolve at fetch time, so this is a function, not a value.
   const effectiveQuery = useCallback(() => {
@@ -445,7 +529,6 @@ export default function WorkflowsList() {
     return serverOrder ? withOrderBy(base, serverOrder) : base;
   }, [state.query, state.range, serverOrder]);
 
-  const [data, setData] = useState<ListData>({ rows: [], token: undefined, loading: true, error: null, errors: [] });
   const [countErrors, setCountErrors] = useState<NamespaceError[]>([]);
   const [counts, setCounts] = useState<{ total: number | null; byStatus: Record<string, number>; loading: boolean }>({ total: null, byStatus: {}, loading: true });
   const [page, setPage] = useState(0);
@@ -582,17 +665,17 @@ export default function WorkflowsList() {
   const quick = quickFilters(new Date(), { reportedProblems: !cross && reportedProblems });
   const activeQuick = activeQuickFilter(quick, state.query, state.range);
 
-  const onSort = (column: string) => {
-    const cur = state.sort?.column === column ? state.sort.dir : null;
-    update({ sort: cur === null ? { column, dir: 'desc' } : cur === 'desc' ? { column, dir: 'asc' } : null });
-  };
+  const onSort = (column: string) => update({ sort: nextSort(state.sort, column, allColumns.find((c) => c.id === column)?.sortType ?? 'keyword') });
 
   const visibleColumns = visibleIds.map((id) => allColumns.find((c) => c.id === id)).filter((c): c is ColumnDef => !!c);
   const tableColumns: Column<Row>[] = visibleColumns.map((c) => ({
     id: c.id,
     label: c.label,
     width: c.width,
-    sortable: es ? !!c.sortField : !!c.sortType,
+    sortable: !!c.sortType,
+    movable: true,
+    tag: c.tag,
+    hint: c.hint,
     render: c.render ? (r) => c.render?.(r, rowNamespace(r, ns)) : (r) => display(c.get(r)),
     title: (r) => display(c.get(r)),
   }));
@@ -645,13 +728,10 @@ export default function WorkflowsList() {
     ];
   });
 
-  const setColumns = (ids: string[]) => {
-    try {
-      localStorage.setItem(columnsKey(prefsKey), JSON.stringify(ids));
-    } catch {
-      // Storage full or disabled: the URL still carries the choice.
-    }
-    update({ cols: ids.length ? ids : null });
+  // Every change goes to the saved preference and the URL; reset clears both.
+  const setColumns = (ids: string[] | null) => {
+    saveColumns(prefsKey, ids);
+    update({ cols: ids?.length ? ids : null });
   };
 
   return (
@@ -697,13 +777,21 @@ export default function WorkflowsList() {
           ORDER BY is not supported across namespaces, so <code>{splitOrderBy(state.query).orderBy}</code> was not sent; sort by a column header to sort the loaded rows locally instead.
         </p>
       )}
+      {memoModule instanceof Error && <p class="alert alert-error">Could not load memo decoding: {memoModule.message}</p>}
+      {memo?.codecError.value && (
+        <p class="alert alert-error" role="alert">
+          Memo values could not be decoded by the codec server; they are shown undecoded. <span class="muted">({memo.codecError.value})</span>
+        </p>
+      )}
 
       <div class="toolbar">
         <RangePicker value={state.range} onChange={(range) => update({ range })} />
         <div class="toolbar-spacer" />
         {canBatch && <ActionMenu label={selected.size ? `Bulk actions (${selected.size})` : 'Bulk actions'} items={bulkItems} />}
         <PresetMenu ns={prefsKey} state={state} onApply={(p) => update({ query: p.query, range: p.range })} />
-        <ColumnPicker all={allColumns.map((c) => ({ id: c.id, label: c.label }))} visible={visibleIds} onChange={setColumns} />
+        <ColumnPicker all={allColumns.map((c) => ({ id: c.id, label: c.label, tag: c.tag }))} visible={visibleIds} onChange={setColumns} onReset={() => setColumns(null)}>
+          <MemoKeyForm onAdd={(key) => !visibleIds.includes(memoId(key)) && setColumns([...visibleIds, memoId(key)])} />
+        </ColumnPicker>
         {!cross && (
           <select class="select" aria-label="Rows per page" value={String(state.perPage)} onChange={(e) => update({ perPage: Number((e.currentTarget as HTMLSelectElement).value) })}>
           {PER_PAGE_OPTIONS.map((n) => (
@@ -741,20 +829,7 @@ export default function WorkflowsList() {
           {data.error.message}
         </div>
       )}
-      {clientSort && (
-        <div class="alert" role="status">
-          Sorted locally across {data.rows.length.toLocaleString('en-US')} loaded rows — SQL visibility cannot sort.
-          {data.token && data.rows.length < CLIENT_SORT_WINDOW && (
-            <>
-              {' '}
-              <button type="button" class="btn btn-sm" disabled={data.loading} onClick={() => void loadMore()}>
-                Load {state.perPage} more
-              </button>
-            </>
-          )}
-          {data.token && data.rows.length >= CLIENT_SORT_WINDOW && <> The sort window is full at {CLIENT_SORT_WINDOW} rows; narrow the query to sort the rest.</>}
-        </div>
-      )}
+      {clientSort && <LocalSortNotice reason={localSortReason} loaded={data.rows.length} more={data.token ? pageSize : null} loading={data.loading} onMore={() => void loadMore()} />}
 
       {listView.value === 'timeline' ? (
         timelineModule instanceof Error ? (
@@ -771,6 +846,7 @@ export default function WorkflowsList() {
           rowKey={rowKeyOf}
           sort={state.sort}
           onSort={onSort}
+          onMove={(id, target, after) => setColumns(dropColumn(visibleIds, id, target, after))}
           caption={cross ? 'Workflows in all selected namespaces' : `Workflows in ${ns}`}
           empty={data.loading ? 'Loading…' : 'No workflows match.'}
         />
