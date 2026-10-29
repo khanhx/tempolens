@@ -1,0 +1,104 @@
+/* Console page: command input with its suggestion list, raw editor, output. */
+.console-tab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  cursor: pointer;
+}
+
+.console-tab[aria-selected='true'] {
+  border-bottom-color: var(--c-accent);
+  font-weight: 600;
+}
+
+.console-form {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.console-row {
+  display: flex;
+  gap: var(--s-2);
+  align-items: flex-start;
+}
+
+.console-combo {
+  position: relative;
+  flex: 1;
+}
+
+.console-combo .input {
+  width: 100%;
+  height: 32px;
+}
+
+.console-suggest {
+  position: absolute;
+  z-index: 10;
+  top: 100%;
+  left: 0;
+  min-width: 240px;
+  max-height: 280px;
+  overflow: auto;
+  margin: 2px 0 0;
+  padding: var(--s-1) 0;
+  list-style: none;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.console-suggest li {
+  padding: 2px var(--s-3);
+  cursor: pointer;
+}
+
+.console-suggest li:hover,
+.console-suggest li[aria-selected='true'] {
+  background: var(--c-selected);
+}
+
+.console-editor {
+  min-height: 16em;
+  resize: vertical;
+}
+
+.console-preview summary {
+  cursor: pointer;
+}
+
+.console-preview ol {
+  margin: var(--s-1) 0;
+  padding-left: var(--s-5);
+}
+
+.console-result-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  margin-bottom: var(--s-2);
+}
+
+.console-result-head code {
+  overflow-wrap: anywhere;
+}
+
+.console-table {
+  overflow: auto;
+  max-height: 70vh;
+}
+
+.console-table td {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+.console-token {
+  background: var(--c-danger-bg);
+  font-family: var(--font-mono);
+}

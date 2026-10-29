@@ -3,7 +3,7 @@ import { navCollapsed } from '../../lib/prefs';
 import { hasCapability } from '../../lib/server-info';
 import { href, P } from '../../routes';
 
-type IconName = 'workflows' | 'schedules' | 'batch' | 'queues' | 'archival' | 'all' | 'namespaces' | 'import' | 'nexus' | 'codec' | 'search' | 'cluster';
+type IconName = 'workflows' | 'schedules' | 'batch' | 'queues' | 'archival' | 'all' | 'namespaces' | 'import' | 'nexus' | 'codec' | 'search' | 'cluster' | 'console';
 
 // 24×24 stroke icons; kept inline so the shell needs no icon font or extra request.
 const ICON_PATHS: Record<IconName, string> = {
@@ -19,6 +19,7 @@ const ICON_PATHS: Record<IconName, string> = {
   codec: 'M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16',
   search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM20 20l-4-4',
   cluster: 'M4 5h16v5H4zM4 14h16v5H4zM8 7.5h.01M8 16.5h.01',
+  console: 'M4 5h16v14H4zM7 9l3 3-3 3M12 15h5',
 };
 
 function Icon({ name }: { name: IconName }) {
@@ -48,6 +49,7 @@ export function Nav({ ns, version }: { ns: string; version: string }) {
     { to: href(P.batchOperations, { ns }), icon: 'batch', label: 'Batch operations' },
     { to: href(P.taskQueues, { ns }), icon: 'queues', label: 'Task queues' },
     { to: href(P.archival, { ns }), icon: 'archival', label: 'Archival' },
+    { to: href(P.console, { ns }), icon: 'console', label: 'Console' },
   ];
 
   return (

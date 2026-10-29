@@ -48,6 +48,7 @@ export const P = {
   archivedHistory: `${NS}/archival/:wf/:run/history`,
   taskQueues: `${NS}/task-queues`,
   taskQueue: `${NS}/task-queues/:queue`,
+  console: `${NS}/console`,
   nexus: '/nexus',
   nexusCreate: '/nexus/create',
   nexusEndpoint: '/nexus/:id',
@@ -89,7 +90,7 @@ export function namespaceFromPath(path: string): string | null {
 }
 
 /** Namespace sections whose list page exists in every namespace. */
-const SWITCHABLE_SECTIONS = new Set(['workflows', 'schedules', 'batch-operations', 'archival', 'task-queues']);
+const SWITCHABLE_SECTIONS = new Set(['workflows', 'schedules', 'batch-operations', 'archival', 'task-queues', 'console']);
 
 /**
  * Target of the namespace switcher: the same section's list page in the new

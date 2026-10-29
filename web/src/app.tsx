@@ -38,6 +38,7 @@ const ImportHistory = lazy(() => import('./pages/import'));
 const CodecSettings = lazy(() => import('./pages/codec-settings'));
 const SearchPanel = lazy(() => import('./pages/search-panel'));
 const Cluster = lazy(() => import('./pages/cluster'));
+const Console = lazy(() => import('./pages/console'));
 
 /** Client-side redirect that replaces the history entry and keeps the query string. */
 function Redirect({ to }: { to: string }) {
@@ -124,6 +125,7 @@ function Routes({ me }: { me: Me }) {
       <Route path={P.archivedHistory} component={ArchivalHistory} />
       <Route path={P.taskQueues} component={TaskQueues} />
       <Route path={P.taskQueue} component={TaskQueue} />
+      <Route path={P.console} component={Console} />
 
       <Route path={P.nexus} component={NexusList} />
       <Route path={P.nexusCreate} component={NexusForm} />
