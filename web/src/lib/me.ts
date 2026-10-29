@@ -1,6 +1,5 @@
 import { signal } from '@preact/signals';
-import type { ApiError } from './api';
-import { api } from './api';
+import { api, ApiError } from './api';
 
 /** Actions the server can disable, in contract order (§3.1). */
 export const WRITE_ACTIONS = [
@@ -117,11 +116,32 @@ export function parseMe(raw: unknown): Me {
 export const me = signal<Me | null>(null);
 export const meError = signal<ApiError | Error | null>(null);
 
+/** Longest wait before the one retry of a rate-limited `/api/x/me`. */
+export const ME_RETRY_MAX_MS = 5000;
+/** Wait when a 429 carries no usable `Retry-After`. */
+const ME_RETRY_DEFAULT_MS = 1000;
+
+/**
+ * GET `/api/x/me`. A 429 (a burst of tabs opening at once shares the
+ * per-user limit) is retried once after `Retry-After`, capped, so start-up
+ * does not fail on a momentary limit; a second 429 is reported.
+ */
+async function fetchMe(): Promise<unknown> {
+  try {
+    return await api.get<unknown>('/api/x/me');
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status !== 429) throw err;
+    const wait = Math.min(err.retryAfterMs ?? ME_RETRY_DEFAULT_MS, ME_RETRY_MAX_MS);
+    await new Promise((resolve) => setTimeout(resolve, wait));
+    return api.get<unknown>('/api/x/me');
+  }
+}
+
 /** Loads `/api/x/me` into the `me` signal; failures land in `meError`. */
 export async function loadMe(): Promise<void> {
   meError.value = null;
   try {
-    me.value = parseMe(await api.get<unknown>('/api/x/me'));
+    me.value = parseMe(await fetchMe());
   } catch (err) {
     meError.value = err instanceof Error ? err : new Error(String(err));
   }

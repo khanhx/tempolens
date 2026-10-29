@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { canAll, canWrite, deniedReason, loadMe, me, meError, parseMe } from './me';
+import type { ApiError } from './api';
+import { canAll, canWrite, deniedReason, loadMe, ME_RETRY_MAX_MS, me, meError, parseMe } from './me';
 
 // The contract example (docs/api-contract.md §3.1).
 const example = {
@@ -102,5 +103,51 @@ describe('loadMe', () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response('{"role":"root"}')));
     await loadMe();
     expect(meError.value?.message).toMatch(/role/);
+  });
+
+  const limited = (retryAfter?: string) =>
+    new Response('{"code":8,"message":"too many requests; slow down"}', { status: 429, headers: retryAfter ? { 'Retry-After': retryAfter } : {} });
+
+  it('retries a rate-limited start-up once, after Retry-After', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(limited('2')).mockResolvedValueOnce(new Response(JSON.stringify(example)));
+      vi.stubGlobal('fetch', fetchMock);
+      const done = loadMe();
+      await vi.advanceTimersByTimeAsync(1999);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(meError.value).toBeNull();
+      await vi.advanceTimersByTimeAsync(1);
+      await done;
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(me.value?.user?.email).toBe('alice@example.com');
+      expect(meError.value).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('caps the wait and reports a second 429', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn<typeof fetch>().mockImplementation(() => Promise.resolve(limited('3600')));
+      vi.stubGlobal('fetch', fetchMock);
+      const done = loadMe();
+      await vi.advanceTimersByTimeAsync(ME_RETRY_MAX_MS);
+      await done;
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(me.value).toBeNull();
+      expect((meError.value as ApiError | null)?.status).toBe(429);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not retry other failures', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response('{"code":14,"message":"down"}', { status: 503 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await loadMe();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(meError.value?.message).toBe('down');
   });
 });
