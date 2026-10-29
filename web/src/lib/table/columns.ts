@@ -11,17 +11,40 @@ export const memoKeyOf = (id: string) => id.slice(MEMO_PREFIX.length);
 /** `cols` URL value: each id URI-encoded so a memo key may contain a comma. */
 export const encodeColumns = (ids: readonly string[]) => ids.map(encodeURIComponent).join(',');
 
-/** Ids from a `cols` URL value, deduplicated; null when there are none. */
+/** Percent-decodes one query-string piece, with `+` as a space; null when the escape is malformed. */
+function queryDecode(s: string): string | null {
+  try {
+    return decodeURIComponent(s.replace(/\+/g, ' '));
+  } catch {
+    return null;
+  }
+}
+
+// What encodeURIComponent can produce. Base ids hold none of the escaped
+// characters and `sa:`/`memo:` ids always hold a colon, so a value whose
+// comma-separated parts all match is the list page's own doubly encoded form.
+const ENCODED_ID = /^[\w\-.!~*'()%]*$/;
+
+/**
+ * Ids from the raw, still percent-encoded `cols` query value, deduplicated;
+ * null when there are none. Three forms are read:
+ * - literal commas (`status,sa:Foo`, `status,memo%3Ateam%2Cregion`): split, then decode each id once;
+ * - the list page's form (`status%2Cmemo%253Ateam%252Cregion`): decode, split, decode each id again;
+ * - one hand-encoded id (`memo%3Ateam%2Cregion`): decode once, so `%2C` stays inside the key.
+ */
 export function decodeColumns(raw: string | null): string[] | null {
   if (raw === null) return null;
-  const ids = raw.split(',').flatMap((part) => {
-    try {
-      const id = decodeURIComponent(part).trim();
-      return id ? [id] : [];
-    } catch {
-      // A malformed escape is a stale or hand-edited link: skip that id.
-      return [];
-    }
+  let parts = raw.split(',');
+  if (parts.length === 1) {
+    const value = queryDecode(raw);
+    if (value === null) return null;
+    const split = value.split(',');
+    if (split.every((part) => ENCODED_ID.test(part))) parts = split;
+  }
+  // A malformed escape is a stale or hand-edited link: that id is skipped.
+  const ids = parts.flatMap((part) => {
+    const id = queryDecode(part)?.trim();
+    return id ? [id] : [];
   });
   return ids.length ? [...new Set(ids)] : null;
 }

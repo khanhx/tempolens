@@ -39,6 +39,28 @@ describe('cols URL encoding', () => {
     expect(parseListState('?cols=status,id,sa:Foo').cols).toEqual(['status', 'id', 'sa:Foo']);
   });
 
+  it('reads a hand-written single-encoded memo key with a comma as one id', () => {
+    const search = '?cols=status,memo%3Ateam%2Cregion';
+    expect(parseListState(search).cols).toEqual(['status', 'memo:team,region']);
+    expect(parseListState(new URL(`http://x/${search}`).search).cols).toEqual(['status', 'memo:team,region']);
+    expect(parseListState('?cols=memo%3Ateam%2Cregion').cols).toEqual(['memo:team,region']);
+    expect(parseListState('?cols=memo:team%2Cregion').cols).toEqual(['memo:team,region']);
+  });
+
+  it('reads the form the list page writes, with ids encoded inside an encoded value', () => {
+    const search = listSearch({ ...parseListState(''), cols: ['status', memoId('team,region')] });
+    expect(search).toBe('?cols=status%2Cmemo%253Ateam%252Cregion');
+    expect(parseListState(search).cols).toEqual(['status', 'memo:team,region']);
+    expect(parseListState('?cols=status%2Cid').cols).toEqual(['status', 'id']);
+  });
+
+  it('keeps stale ids in the parsed list so resolveColumns can drop them', () => {
+    const cols = parseListState('?cols=status,gone,memo%3Ateam%2Cregion').cols;
+    expect(cols).toEqual(['status', 'gone', 'memo:team,region']);
+    expect(resolveColumns([cols], ['id'], (id) => id === 'status' || isMemoId(id))).toEqual(['status', 'memo:team,region']);
+    expect(resolveColumns([parseListState('?cols=gone%2Calso-gone').cols], ['id'], () => false)).toEqual(['id']);
+  });
+
   it('skips empty and malformed parts and duplicates', () => {
     expect(decodeColumns('id,,%E0%A4%A,id,run')).toEqual(['id', 'run']);
     expect(decodeColumns(',')).toBeNull();

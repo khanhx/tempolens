@@ -35,8 +35,19 @@ const list = (v: string | null): string[] | null => {
   return items.length ? items : null;
 };
 
-export function parseListState(search: string | URLSearchParams): ListState {
-  const p = typeof search === 'string' ? new URLSearchParams(search) : search;
+/** The first raw, still percent-encoded value of `name` in a query string; null when absent. */
+function rawParam(search: string, name: string): string | null {
+  for (const pair of search.replace(/^\?/, '').split('&')) {
+    const eq = pair.indexOf('=');
+    const key = eq < 0 ? pair : pair.slice(0, eq);
+    if (key === name) return eq < 0 ? '' : pair.slice(eq + 1);
+  }
+  return null;
+}
+
+/** State from a `?…` query string. `cols` is read before percent-decoding, because a column id may hold an encoded comma. */
+export function parseListState(search: string): ListState {
+  const p = new URLSearchParams(search);
   const perPage = Number(p.get('per-page'));
   // The column id may itself contain colons (`sa:Name`, `memo:key`); the direction is the last part.
   const sortRaw = /^(.+):(asc|desc)$/s.exec(p.get('sort') ?? '');
@@ -46,7 +57,7 @@ export function parseListState(search: string | URLSearchParams): ListState {
     range: parseRange(range) ? range : '',
     sort: sortRaw?.[1] && sortRaw[2] ? { column: sortRaw[1], dir: sortRaw[2] as SortDir } : null,
     perPage: (PER_PAGE_OPTIONS as readonly number[]).includes(perPage) ? perPage : DEFAULT_PER_PAGE,
-    cols: decodeColumns(p.get('cols')),
+    cols: decodeColumns(rawParam(search, 'cols')),
     ns: list(p.get('ns')),
   };
 }
