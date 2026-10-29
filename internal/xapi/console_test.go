@@ -102,7 +102,7 @@ func TestConsoleRoles(t *testing.T) {
 		if code != c.want {
 			t.Errorf("%s: status %d, want %d: %s", c.name, code, c.want, body)
 		}
-		if reached := len(env.Fake.Calls()) == 1; reached != (c.want == http.StatusOK) {
+		if reached := len(testutil.WithoutNamespaceCheck(env.Fake.Calls())) == 1; reached != (c.want == http.StatusOK) {
 			t.Errorf("%s: backend reached=%v", c.name, reached)
 		}
 	}
@@ -157,7 +157,7 @@ func TestConsoleDestructiveNeedsConfirm(t *testing.T) {
 		if code != c.want {
 			t.Errorf("%s: status %d, want %d: %s", c.name, code, c.want, body)
 		}
-		if reached := len(env.Fake.Calls()) == 1; reached != (c.want == http.StatusOK) {
+		if reached := len(testutil.WithoutNamespaceCheck(env.Fake.Calls())) == 1; reached != (c.want == http.StatusOK) {
 			t.Errorf("%s: backend reached=%v", c.name, reached)
 		}
 	}

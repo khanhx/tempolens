@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -42,7 +44,8 @@ func NewInterceptor(policy *Policy, auditLog *audit.Logger, log *slog.Logger, ve
 // Unary is the grpc.UnaryClientInterceptor. The checks run in this order:
 // rule lookup, principal, namespace guard, class and role, env flags,
 // validators, confirmation and reason headers, identity stamp, metadata
-// replacement, invoke, audit.
+// replacement, the live-namespace check before DeleteNamespace, invoke,
+// audit.
 func (i *Interceptor) Unary(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 	start := time.Now()
 	short := shortMethod(method)
@@ -133,7 +136,13 @@ func (i *Interceptor) Unary(ctx context.Context, method string, req, reply any, 
 	if rule.Class.mutating() {
 		i.log.Debug("write attempt", "audit", "attempt", "user", p.User(), "method", short)
 	}
-	err := invoker(ctx, method, req, reply, cc, opts...)
+	var err error
+	if del, ok := msg.(*operatorservice.DeleteNamespaceRequest); ok {
+		err = requireLiveNamespace(ctx, del.GetNamespace(), cc, invoker, opts...)
+	}
+	if err == nil {
+		err = invoker(ctx, method, req, reply, cc, opts...)
+	}
 	if err == nil && method == listNamespaces && !i.cfg.ShowSystemNamespace {
 		hideSystemNamespace(reply)
 	}
@@ -158,7 +167,27 @@ func (i *Interceptor) policyCheck(rule Rule) func(proto.Message) error {
 	return func(m proto.Message) error { return rule.PolicyCheck(i.policy, m) }
 }
 
-const listNamespaces = wfPrefix + "ListNamespaces"
+const (
+	listNamespaces    = wfPrefix + "ListNamespaces"
+	describeNamespace = wfPrefix + "DescribeNamespace"
+)
+
+// requireLiveNamespace answers NotFound for a namespace that is gone or
+// already marked deleted, before DeleteNamespace runs. Temporal 1.24 accepts
+// a delete of a name it deleted seconds earlier, while its frontend cache
+// still holds the name, then blocks for minutes as the system delete workflow
+// retries the lookup. DescribeNamespace reads persistence and answers at once.
+// Any other describe error is returned, so the delete is not attempted.
+func requireLiveNamespace(ctx context.Context, ns string, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	resp := &workflowservice.DescribeNamespaceResponse{}
+	if err := invoker(ctx, describeNamespace, &workflowservice.DescribeNamespaceRequest{Namespace: ns}, resp, cc, opts...); err != nil {
+		return err
+	}
+	if resp.GetNamespaceInfo().GetState() == enumspb.NAMESPACE_STATE_DELETED {
+		return status.Error(codes.NotFound, "namespace "+ns+" is already deleted")
+	}
+	return nil
+}
 
 // hideSystemNamespace drops temporal-system from a ListNamespaces reply,
 // matching the READ guard that hides it everywhere else.

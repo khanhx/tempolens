@@ -507,7 +507,10 @@ func TestWriteAuditedAfterInvoke(t *testing.T) {
 // written after Temporal answers and carries the target, reason and result.
 func TestDestructiveAuditCarriesResult(t *testing.T) {
 	h := newHarness(t, nil)
-	h.fake.SetResponder(func(_ context.Context, method string, _ any) (any, error, bool) {
+	h.fake.SetResponder(func(ctx context.Context, method string, req any) (any, error, bool) {
+		if resp, err, ok := testutil.LiveNamespace(ctx, method, req); ok {
+			return resp, err, ok
+		}
 		return &operatorservice.DeleteNamespaceResponse{DeletedNamespace: "tui-test-x-deleted-1"}, nil, true
 	})
 	req := &operatorservice.DeleteNamespaceRequest{Namespace: "tui-test-x"}
@@ -531,6 +534,66 @@ func TestDestructiveAuditCarriesResult(t *testing.T) {
 			t.Errorf("workflow delete audit lacks %s: %s", want, h.logs.String())
 		}
 	}
+}
+
+// TestDeleteNamespaceChecksNamespaceFirst: a namespace delete describes the
+// namespace first. A namespace that is gone or already deleted answers
+// NotFound without calling DeleteNamespace, any other describe error stops the
+// delete, and the audit line carries the result either way.
+func TestDeleteNamespaceChecksNamespaceFirst(t *testing.T) {
+	info := func(state enumspb.NamespaceState) *workflowservice.DescribeNamespaceResponse {
+		return &workflowservice.DescribeNamespaceResponse{NamespaceInfo: &namespacepb.NamespaceInfo{Name: "tui-test-x", State: state}}
+	}
+	for _, tc := range []struct {
+		name       string
+		describe   func() (any, error)
+		wantCode   codes.Code
+		wantDelete bool
+	}{
+		{"not found", func() (any, error) { return nil, status.Error(codes.NotFound, "Namespace tui-test-x is not found.") }, codes.NotFound, false},
+		{"already deleted", func() (any, error) { return info(enumspb.NAMESPACE_STATE_DELETED), nil }, codes.NotFound, false},
+		{"describe unavailable", func() (any, error) { return nil, status.Error(codes.Unavailable, "frontend down") }, codes.Unavailable, false},
+		{"registered", func() (any, error) { return info(enumspb.NAMESPACE_STATE_REGISTERED), nil }, codes.OK, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t, nil)
+			h.fake.SetResponder(func(_ context.Context, method string, _ any) (any, error, bool) {
+				if strings.HasSuffix(method, "/DescribeNamespace") {
+					resp, err := tc.describe()
+					return resp, err, true
+				}
+				return &operatorservice.DeleteNamespaceResponse{DeletedNamespace: "tui-test-x-deleted-1"}, nil, true
+			})
+			ctx := authz.WithIntent(admin(), authz.Intent{Confirm: "tui-test-x", HasConfirm: true})
+			code := invoke(t, h, ctx, op+"DeleteNamespace", &operatorservice.DeleteNamespaceRequest{Namespace: "tui-test-x"}, &operatorservice.DeleteNamespaceResponse{})
+			if code != tc.wantCode {
+				t.Fatalf("code %v, want %v", code, tc.wantCode)
+			}
+			var methods []string
+			for _, c := range h.fake.Calls() {
+				methods = append(methods, shortName(c.Method))
+			}
+			want := "DescribeNamespace"
+			if tc.wantDelete {
+				want += ",DeleteNamespace"
+			}
+			if got := strings.Join(methods, ","); got != want {
+				t.Fatalf("backend calls %s, want %s", got, want)
+			}
+			if got := h.fake.Calls()[0].Req.(*workflowservice.DescribeNamespaceRequest).GetNamespace(); got != "tui-test-x" {
+				t.Fatalf("described %q", got)
+			}
+			for _, want := range []string{`"event":"write"`, `"method":"DeleteNamespace"`, `"target":"tui-test-x"`, `"code":"` + tc.wantCode.String() + `"`} {
+				if !strings.Contains(h.logs.String(), want) {
+					t.Errorf("audit line lacks %s: %s", want, h.logs.String())
+				}
+			}
+		})
+	}
+}
+
+func shortName(method string) string {
+	return method[strings.LastIndexByte(method, '/')+1:]
 }
 
 // TestListNamespacesHidesSystem: the namespace record itself is hidden from

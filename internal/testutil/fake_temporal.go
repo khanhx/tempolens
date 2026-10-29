@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 
+	enumspb "go.temporal.io/api/enums/v1"
+	namespacepb "go.temporal.io/api/namespace/v1"
 	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
@@ -30,6 +32,38 @@ type Call struct {
 // Responder may answer a call instead of the default Unimplemented server.
 // handled=false falls through to the default.
 type Responder func(ctx context.Context, method string, req any) (resp any, err error, handled bool)
+
+const (
+	describeNamespace = "/temporal.api.workflowservice.v1.WorkflowService/DescribeNamespace"
+	deleteNamespace   = "/temporal.api.operatorservice.v1.OperatorService/DeleteNamespace"
+)
+
+// LiveNamespace answers DescribeNamespace with a registered namespace of the
+// requested name, which the authz interceptor checks before DeleteNamespace.
+// Other calls fall through.
+func LiveNamespace(_ context.Context, method string, req any) (any, error, bool) {
+	if method != describeNamespace {
+		return nil, nil, false
+	}
+	return &workflowservice.DescribeNamespaceResponse{NamespaceInfo: &namespacepb.NamespaceInfo{
+		Name:  req.(*workflowservice.DescribeNamespaceRequest).GetNamespace(),
+		State: enumspb.NAMESPACE_STATE_REGISTERED,
+	}}, nil, true
+}
+
+// WithoutNamespaceCheck drops each DescribeNamespace that the authz
+// interceptor sent right before a DeleteNamespace, so a test can assert the
+// calls its request made. A check that stopped the delete is kept.
+func WithoutNamespaceCheck(calls []Call) []Call {
+	var out []Call
+	for i, c := range calls {
+		if c.Method == describeNamespace && i+1 < len(calls) && calls[i+1].Method == deleteNamespace {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
 
 // FakeTemporal records every RPC that reaches it. Unless a Responder handles
 // a call, WorkflowService and OperatorService answer Unimplemented and the

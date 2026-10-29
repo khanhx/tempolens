@@ -161,7 +161,7 @@ func TestRouteMatrix(t *testing.T) {
 				r.Header.Set(authz.ConfirmHeader, "x")
 			}
 			w := env.Do(r)
-			calls := env.Fake.Calls()
+			calls := testutil.WithoutNamespaceCheck(env.Fake.Calls())
 			if !allowedFor(rule.Class, who) {
 				if w.Code != http.StatusForbidden {
 					t.Errorf("who=%d %s: status %d, want 403 (%s)", who, name, w.Code, w.Body.String())
@@ -196,6 +196,7 @@ func TestRouteMatrix(t *testing.T) {
 // called only when allowed.
 func TestXAPIWriteRouteMatrix(t *testing.T) {
 	env := testutil.NewEnv(t, nil)
+	env.Fake.SetResponder(testutil.LiveNamespace)
 	const wf, op = "/temporal.api.workflowservice.v1.WorkflowService/", "/temporal.api.operatorservice.v1.OperatorService/"
 	for _, tc := range []struct {
 		method, path, body, confirm, reason, rpc string
@@ -217,7 +218,7 @@ func TestXAPIWriteRouteMatrix(t *testing.T) {
 				r.Header.Set(authz.ReasonHeader, tc.reason)
 			}
 			w := env.Do(r)
-			calls := env.Fake.Calls()
+			calls := testutil.WithoutNamespaceCheck(env.Fake.Calls())
 			name := tc.method + " " + tc.path
 			switch {
 			case who == testutil.Nobody:
@@ -382,7 +383,10 @@ func TestXAPINamespaceDeleteSurvivesDisconnect(t *testing.T) {
 	env := testutil.NewEnv(t, nil)
 	started, release := make(chan struct{}, 1), make(chan struct{})
 	backendCode := make(chan string, 1)
-	env.Fake.SetResponder(func(ctx context.Context, _ string, _ any) (any, error, bool) {
+	env.Fake.SetResponder(func(ctx context.Context, method string, req any) (any, error, bool) {
+		if resp, err, ok := testutil.LiveNamespace(ctx, method, req); ok {
+			return resp, err, ok
+		}
 		started <- struct{}{}
 		select {
 		case <-release:
@@ -422,6 +426,7 @@ func TestConsoleRouteMatrix(t *testing.T) {
 	cfg := testutil.AuthConfig(t)
 	cfg.Limits.XAPIRPS = 1000
 	env := testutil.NewEnv(t, cfg)
+	env.Fake.SetResponder(testutil.LiveNamespace)
 	methods := authz.ConsoleMethods()
 	if len(methods) < 50 {
 		t.Fatalf("console allowlist too small: %d", len(methods))
@@ -446,7 +451,7 @@ func TestConsoleRouteMatrix(t *testing.T) {
 			}
 			r.Header.Set(authz.ReasonHeader, in.Reason)
 			w := env.Do(r)
-			calls := env.Fake.Calls()
+			calls := testutil.WithoutNamespaceCheck(env.Fake.Calls())
 			switch {
 			case who == testutil.Nobody:
 				if w.Code != http.StatusUnauthorized || len(calls) != 0 {
