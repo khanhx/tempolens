@@ -4,7 +4,7 @@
 ARG VERSION=0.0.0-dev
 
 # 1. Web: build the SPA and enforce the bundle budget (fails the build when exceeded).
-FROM node:22-alpine AS web
+FROM --platform=$BUILDPLATFORM node:22-alpine AS web
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -13,10 +13,12 @@ COPY web/ ./
 RUN npm run build && npm run budget && rm -rf dist/.vite
 
 # 2. Server: a static binary with the SPA embedded.
-FROM golang:1.26 AS build
+FROM --platform=$BUILDPLATFORM golang:1.26 AS build
 ARG VERSION
+ARG TARGETOS=linux
+ARG TARGETARCH
 WORKDIR /src
-ENV CGO_ENABLED=0 GOTOOLCHAIN=local
+ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOOS=$TARGETOS GOARCH=$TARGETARCH
 COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd/ cmd/
