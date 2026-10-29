@@ -90,3 +90,13 @@ export function inferSortType(values: readonly unknown[]): SortType {
   const present = values.filter((v) => v !== undefined && v !== null && v !== '');
   return present.length > 0 && present.every((v) => typeof v === 'bigint' || (typeof v === 'number' && Number.isFinite(v))) ? 'number' : 'keyword';
 }
+
+/**
+ * Sort type of the `key` memo column over `rows`, or null while any of its
+ * payloads is still decoding: an undecoded value says nothing about the
+ * type, so the first-click direction must wait for it.
+ */
+export function memoSortType(rows: readonly MemoRow[], key: string): SortType | null {
+  if (!rows.every((r) => memoReady(r, key))) return null;
+  return inferSortType(rows.map((r) => memoValue(r, key)));
+}

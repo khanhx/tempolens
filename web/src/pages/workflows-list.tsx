@@ -74,6 +74,8 @@ interface ColumnDef {
   width?: string;
   get: (r: Row) => unknown;
   sortType?: SortType;
+  /** True while the sort type is not known yet (memo values still decoding); a header click waits for it. */
+  sortPending?: boolean;
   /** Search attribute for a server-side ORDER BY (Elasticsearch only). */
   sortField?: string;
   render?: (r: Row, ns: string) => preact.ComponentChildren;
@@ -164,10 +166,15 @@ function attributeColumn(name: string, type: SAType): ColumnDef {
 
 type MemoModule = typeof MemoDecode;
 
-/** A memo column; values appear once the lazily loaded decoder has decoded them. */
-function memoColumn(key: string, memo: MemoModule | null, rows: readonly Row[]): ColumnDef {
+/**
+ * A memo column; values appear once the lazily loaded decoder has decoded them.
+ * Its sort type comes from the decoded values, so it is pending until they
+ * arrive, unless the decoder failed to load and never will.
+ */
+function memoColumn(key: string, memo: MemoModule | null, memoFailed: boolean, rows: readonly Row[]): ColumnDef {
   const get = (r: Row) => memo?.memoValue(r, key);
   const ready = (r: Row) => (memo ? memo.memoReady(r, key) : !r.memo?.fields?.[key]);
+  const sortType = memo ? memo.memoSortType(rows, key) : memoFailed || rows.every(ready) ? 'keyword' : null;
   return {
     id: memoId(key),
     label: key,
@@ -175,7 +182,8 @@ function memoColumn(key: string, memo: MemoModule | null, rows: readonly Row[]):
     tag: 'memo',
     hint: `Memo ${key}: display and client sort only; not server-filterable`,
     get,
-    sortType: memo ? memo.inferSortType(rows.map(get)) : 'keyword',
+    sortType: sortType ?? 'keyword',
+    sortPending: sortType === null,
     render: (r) => (ready(r) ? display(get(r)) : <span class="muted">…</span>),
   };
 }
@@ -502,13 +510,14 @@ export default function WorkflowsList() {
   const memoKeysKey = JSON.stringify(visibleMemoKeys);
   const memoModule = useLazyModule(() => import('../lib/table/memo-decode'), visibleMemoKeys.length > 0);
   const memo = memoModule instanceof Error ? null : memoModule;
+  const memoFailed = memoModule instanceof Error;
   const [memoVersion, setMemoVersion] = useState(0);
   const discoveredMemoKeys = useMemo(() => memoKeys(data.rows), [data.rows]);
   // Serialised so the memo below only recomputes when the set of keys changes.
   const memoKeysAll = JSON.stringify([...new Set([...discoveredMemoKeys, ...visibleMemoKeys])]);
   const allColumns = useMemo(
-    () => [...fixedColumns, ...(JSON.parse(memoKeysAll) as string[]).map((k) => memoColumn(k, memo, data.rows))],
-    [fixedColumns, memoKeysAll, memo, memoVersion, data.rows],
+    () => [...fixedColumns, ...(JSON.parse(memoKeysAll) as string[]).map((k) => memoColumn(k, memo, memoFailed, data.rows))],
+    [fixedColumns, memoKeysAll, memo, memoFailed, memoVersion, data.rows],
   );
 
   // Memo payloads of the loaded rows are decoded once each, one batch per load.
@@ -674,7 +683,25 @@ export default function WorkflowsList() {
   const quick = quickFilters(new Date(), { reportedProblems: !cross && reportedProblems });
   const activeQuick = activeQuickFilter(quick, state.query, state.range);
 
-  const onSort = (column: string) => update({ sort: nextSort(state.sort, column, allColumns.find((c) => c.id === column)?.sortType ?? 'keyword') });
+  // A click on a column whose sort type is still pending is held until the
+  // type is known, so a numeric memo column starts descending like any number.
+  const [heldSort, setHeldSort] = useState<string | null>(null);
+  const onSort = (column: string) => {
+    const col = allColumns.find((c) => c.id === column);
+    if (col?.sortPending) {
+      setHeldSort(column);
+      return;
+    }
+    setHeldSort(null);
+    update({ sort: nextSort(state.sort, column, col?.sortType ?? 'keyword') });
+  };
+  useEffect(() => {
+    if (heldSort === null) return;
+    const col = allColumns.find((c) => c.id === heldSort);
+    if (col?.sortPending) return;
+    setHeldSort(null);
+    if (col) update({ sort: nextSort(state.sort, heldSort, col.sortType ?? 'keyword') });
+  }, [heldSort, allColumns]);
 
   const visibleColumns = visibleIds.map((id) => allColumns.find((c) => c.id === id)).filter((c): c is ColumnDef => !!c);
   const tableColumns: Column<Row>[] = visibleColumns.map((c) => ({

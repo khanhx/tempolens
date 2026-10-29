@@ -5,7 +5,8 @@ import { codecError } from '../payload/codec';
 import type { Payload } from '../payload/decode';
 import { LARGE_PAYLOAD_BYTES } from '../payload/decode';
 import type { MemoRow } from './memo-decode';
-import { decodeMemos, inferSortType, memoCellValue, memoCodecError, memoReady, memoValue } from './memo-decode';
+import { decodeMemos, inferSortType, memoCellValue, memoCodecError, memoReady, memoSortType, memoValue } from './memo-decode';
+import { nextSort } from './sort-cycle';
 
 const json = (value: string): Payload => ({ metadata: { encoding: textToBase64('json/plain') }, data: textToBase64(value) });
 const encrypted = (value: string): Payload => ({ metadata: { encoding: textToBase64('binary/encrypted') }, data: textToBase64(value) });
@@ -116,5 +117,25 @@ describe('inferSortType', () => {
     expect(inferSortType([2, '10'])).toBe('keyword');
     expect(inferSortType([undefined, ''])).toBe('keyword');
     expect(inferSortType([{ a: 1 }])).toBe('keyword');
+  });
+});
+
+describe('memoSortType', () => {
+  it('is unknown while any value of the key is still decoding, then follows the decoded values', async () => {
+    const rows = [row('a', { priority: json('3') }), row('a', {}), row('a', { priority: json('12') })];
+    expect(memoSortType(rows, 'priority')).toBeNull();
+    await decodeMemos(rows, ['priority'], (r) => r.ns, null);
+    expect(memoSortType(rows, 'priority')).toBe('number');
+    // A numeric memo column starts newest/biggest first, and the second click flips it.
+    const first = nextSort(null, 'memo:priority', memoSortType(rows, 'priority') ?? 'keyword');
+    expect(first).toEqual({ column: 'memo:priority', dir: 'desc' });
+    expect(nextSort(first, 'memo:priority', 'number')).toEqual({ column: 'memo:priority', dir: 'asc' });
+  });
+
+  it('is text once decoded when values are not all numbers, or when no row has the key', async () => {
+    const rows = [row('a', { owner: json('"bob"') }), row('a', { owner: json('2') })];
+    await decodeMemos(rows, ['owner'], (r) => r.ns, null);
+    expect(memoSortType(rows, 'owner')).toBe('keyword');
+    expect(memoSortType(rows, 'missing')).toBe('keyword');
   });
 });
