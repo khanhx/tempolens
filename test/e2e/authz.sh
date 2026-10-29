@@ -25,6 +25,9 @@ OUT="$HERE/out"
 BASE="${BASE:-http://localhost:8236}"
 RUN_ID="${RUN_ID:?RUN_ID is required}"
 PARENT_RUN_ID="${PARENT_RUN_ID:?PARENT_RUN_ID is required}"
+# The rows create tui-test- objects named with ${RUN_ID}. Each pass gets its own tag, so a re-run never
+# meets batch jobs, schedules or namespaces that a finished pass left behind. The disposable reset keeps RUN_ID.
+TAG="${RUN_ID}-$(date +%H%M%S)"
 NS="tui-seed-a"
 COOKIE_NAME="__Host-tempolens_session"
 TMP="$(mktemp -d)"
@@ -122,20 +125,28 @@ check_error_shape() {
 }
 
 # Streams: five concurrent long-polls for one user. At least one must be 429 (cap is 4).
+# A long-poll the server ends early never overlaps the others, so an attempt that finishes in under 5 s
+# proves nothing and is retried. Only an attempt that held its streams for the full window and saw no 429 fails.
 check_stream_cap() {
-  local user="$1" path="$2" label="$3" i
-  : > "$TMP/caps"
-  for i in 1 2 3 4 5; do
-    curl -s -o /dev/null -w '%{http_code}\n' --max-time 6 \
-      -H "Cookie: $COOKIE_NAME=$(cookie_value "$user")" -H "X-Tempolens: 1" \
-      "$BASE$path" >> "$TMP/caps" &
+  local user="$1" path="$2" label="$3" i attempt start elapsed
+  for attempt in 1 2 3; do
+    : > "$TMP/caps"
+    start=$(date +%s)
+    for i in 1 2 3 4 5; do
+      curl -s -o /dev/null -w '%{http_code}\n' --max-time 6 \
+        -H "Cookie: $COOKIE_NAME=$(cookie_value "$user")" -H "X-Tempolens: 1" \
+        "$BASE$path" >> "$TMP/caps" &
+    done
+    wait
+    elapsed=$(( $(date +%s) - start ))
+    if grep -q '^429$' "$TMP/caps"; then
+      echo "ok   $label $user stream cap: $(tr '\n' ' ' < "$TMP/caps") (attempt $attempt)"
+      return 0
+    fi
+    [ "$elapsed" -lt 5 ] || break
+    sleep 3
   done
-  wait
-  if grep -q '^429$' "$TMP/caps"; then
-    echo "ok   $label $user stream cap: $(tr '\n' ' ' < "$TMP/caps")"
-  else
-    fail "$label $user: no 429 among 5 concurrent streams: $(tr '\n' ' ' < "$TMP/caps")"
-  fi
+  fail "$label $user: no 429 among 5 concurrent streams: $(tr '\n' ' ' < "$TMP/caps") (last attempt ${elapsed}s)"
 }
 
 # Env-limited update (A03). The writer's request must reach Temporal and be refused by the server's
@@ -250,12 +261,12 @@ run_pass() {
       nogroups) expected="$nogroups" ;;
       padded) expected="$padded" ;;
     esac
-    path="${path//\$\{RUN_ID\}/$RUN_ID}"
+    path="${path//\$\{RUN_ID\}/$TAG}"
     path="${path//\$\{PARENT_RUN_ID\}/$PARENT_RUN_ID}"
     path="${path//\$\{WHO\}/$user}"
-    body="${body//\$\{RUN_ID\}/$RUN_ID}"
+    body="${body//\$\{RUN_ID\}/$TAG}"
     body="${body//\$\{WHO\}/$user}"
-    variant="${variant//\$\{RUN_ID\}/$RUN_ID}"
+    variant="${variant//\$\{RUN_ID\}/$TAG}"
     variant="${variant//\$\{WHO\}/$user}"
     TOTAL=$((TOTAL + 1))
     # PENDING_IDS is an extended regex of row IDs whose feature is not built yet (for example /api/x before phase 5).
@@ -309,6 +320,46 @@ expect_same() {
   fi
 }
 
+# B01 stops the batch that A09 starts, so that batch must still be running when the stop arrives. A09 cancels one
+# workflow per second over its query. Each pass starts its own set of STOP_SET running SeedWaiting workflows, under a
+# tag this run uses only, so the batch cannot drain before B01 runs. The sets are terminated at the end of the run.
+STOP_SET=20
+stop_set_id() { echo "tui-test-authz-stop-$1-${TAG}-$2"; }
+stop_set_seed() { echo "stop-$1-${TAG}"; }
+
+start_stop_set() {
+  local user="$1" i id code value body
+  value="$(printf '"%s"' "$(stop_set_seed "$user")" | base64 | tr -d '\n')"
+  for i in $(seq 1 "$STOP_SET"); do
+    id="$(stop_set_id "$user" "$i")"
+    body="{\"workflowType\":{\"name\":\"SeedWaiting\"},\"taskQueue\":{\"name\":\"tempolens-seed\"},\"searchAttributes\":{\"indexedFields\":{\"SeedRun\":{\"metadata\":{\"encoding\":\"anNvbi9wbGFpbg==\"},\"data\":\"$value\"}}}}"
+    code="$(curl -s -o "$TMP/setup" -w '%{http_code}' -X POST -H "Cookie: $COOKIE_NAME=$(cookie_value admin)" \
+      -H "X-Tempolens: 1" -H "Origin: $BASE" -H "Content-Type: application/json" -d "$body" \
+      "$BASE/api/v1/namespaces/$NS/workflows/$id")"
+    if [ "$code" != "200" ]; then
+      echo "FAIL setup: start $id returned $code: $(head -c 200 "$TMP/setup")"
+      exit 1
+    fi
+    sleep 0.25
+  done
+}
+
+cleanup_stop_set() {
+  local user="$1" i id code
+  for i in $(seq 1 "$STOP_SET"); do
+    id="$(stop_set_id "$user" "$i")"
+    # 404 means the batch already cancelled the workflow. Any other code is a cleanup failure.
+    code="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Cookie: $COOKIE_NAME=$(cookie_value admin)" \
+      -H "X-Tempolens: 1" -H "Origin: $BASE" -H "X-Tempolens-Confirm: $id" -H "Content-Type: application/json" \
+      -d '{"reason":"authz-stop-cleanup"}' "$BASE/api/v1/namespaces/$NS/workflows/$id/terminate")"
+    case "$code" in
+      200|404) ;;
+      *) fail "cleanup $id: terminate returned $code" ;;
+    esac
+    sleep 0.25
+  done
+}
+
 echo "== snapshot before reader pass"
 snapshot "$TMP/before"
 snapshot_admin_state "$TMP/admin-before-reader"
@@ -319,6 +370,9 @@ snapshot "$TMP/after"
 snapshot_admin_state "$TMP/admin-after-reader"
 expect_same "$TMP/before" "$TMP/after" "reader pass changed no target state"
 expect_same "$TMP/admin-before-reader" "$TMP/admin-after-reader" "reader pass changed no namespace or search attribute"
+echo "== stop sets for the batch rows (writer and admin)"
+start_stop_set writer
+start_stop_set admin
 echo "== writer pass (fresh disposables)"
 reset_disposables
 snapshot_admin_state "$TMP/admin-before-writer"
@@ -342,5 +396,8 @@ else
   fail "F04 writer session invalid after rejected logout: $CODE"
 fi
 
+echo "== cleanup of the stop sets"
+cleanup_stop_set writer
+cleanup_stop_set admin
 echo "== row-user checks: $TOTAL, pending: $PENDING, failures: $FAILS"
 [ "$FAILS" -eq 0 ]
