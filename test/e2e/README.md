@@ -8,6 +8,9 @@ LOCAL TEST ONLY. Nothing here is for production. Users, passwords and secrets ar
 - `authz.sh`: curl runner. It sets the Cookie header directly and never uses a cookie jar. It checks each status, validates error bodies as `google.rpc.Status`, checks the role on `/api/x/me`, takes a snapshot before and after the reader pass, runs the stream-cap and rate-burst checks, and exits non-zero on any mismatch.
 - `login.ts`: drives the Dex password form and saves `out/<user>.cookie`.
 - `functional.spec.ts`: skeleton blocks, all `fixme` until phase 10.
+- `columns.spec.ts`: workflow list columns in the single-namespace and all-namespaces views (sort cycle, add, reorder, drag, remove, reset, memo and property columns, and a hand-written single-encoded `cols` link with a comma key). Needs `RUN_ID` from a seed run with the memo set.
+- `console.spec.ts`: the command console, per role. Reads run on `tui-seed-a`. Writes run only on `tui-test-*` data that the spec creates and removes: a workflow started and terminated through the console, and a namespace created and deleted by admin. Covers the read user's disabled mutating command (CLI and raw) with its reason, the server's 403 for read and write on the same calls, the typed confirm, the admin-only refusal for write, a raw read, and a parse error. Needs `RUN_ID` and the `reader`, `writer` and `admin` cookies.
+- `test/report/console-capture.spec.ts` shares the same console states as screenshots, and `build-columns-report.mjs` embeds them with the table shots in `plans/reports/tester-261029-0816-columns-console-e2e.html`.
 
 ## Session key
 
