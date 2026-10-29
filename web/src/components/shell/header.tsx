@@ -36,7 +36,7 @@ function TimeControls() {
   );
 }
 
-function UserMenu({ me }: { me: Me }) {
+export function UserMenu({ me }: { me: Me }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // The email is empty when the identity provider did not verify it.
@@ -47,8 +47,9 @@ function UserMenu({ me }: { me: Me }) {
     setError(null);
     try {
       await api.post('/auth/logout');
-      // The next navigation has no session, so the server starts a new login.
-      window.location.assign('/');
+      // Not '/': with no session that starts a login, and Dex, whose session is
+      // still live, signs the user straight back in. This page does not redirect.
+      window.location.assign('/auth/signed-out');
     } catch (err) {
       setError(`Sign out failed: ${err instanceof Error ? err.message : String(err)}`);
       setBusy(false);
