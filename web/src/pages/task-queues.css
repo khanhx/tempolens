@@ -1,0 +1,16 @@
+/* Task queue index: the name combobox and its suggestion notice. */
+.tq-form {
+  display: flex;
+  gap: var(--s-2);
+  align-items: flex-start;
+  max-width: 720px;
+}
+
+.tq-note {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.tq-error {
+  color: var(--c-warning);
+}

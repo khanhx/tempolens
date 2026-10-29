@@ -1,0 +1,51 @@
+/* Combobox: a text input with a suggestion list below it. */
+.combo {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.combo .input {
+  width: 100%;
+}
+
+.combo-list {
+  position: absolute;
+  z-index: 10;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 320px;
+  overflow: auto;
+  margin: 2px 0 0;
+  padding: var(--s-1) 0;
+  list-style: none;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.combo-list li {
+  display: flex;
+  gap: var(--s-3);
+  justify-content: space-between;
+  padding: var(--s-1) var(--s-3);
+  cursor: pointer;
+}
+
+.combo-list li[aria-selected='true'] {
+  background: var(--c-selected);
+}
+
+.combo-value {
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.combo-hint {
+  flex: none;
+  color: var(--c-text-muted);
+  font-size: var(--fs-xs);
+}

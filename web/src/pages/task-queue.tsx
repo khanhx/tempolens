@@ -5,6 +5,7 @@ import { CopyButton } from '../components/copy-button';
 import { cliCommand } from '../lib/actions/cli-command';
 import { api, seg } from '../lib/api';
 import { quoteString } from '../lib/query/build';
+import { recordRecentQueue } from '../lib/task-queues';
 import type { Poller } from '../lib/temporal';
 import { href, P } from '../routes';
 import { PollerTable } from './tabs/workers';
@@ -118,6 +119,9 @@ export default function TaskQueue() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Opened queues, including ones reached by a link, become suggestions on the task queue index.
+  useEffect(() => recordRecentQueue(ns, queue), [ns, queue]);
 
   return (
     <section class="page">
