@@ -26,7 +26,6 @@ const (
 	taskQueue        = "tempolens-seed"
 	namespaceA       = "tui-seed-a"
 	namespaceB       = "tui-seed-b"
-	namespaceDefault = "default"
 	disposablePrefix = "tempolens-e2e-disposable-"
 	volumeCount      = 300
 )
@@ -39,6 +38,21 @@ const (
 )
 
 var customers = []string{"acme", "globex", "initech"}
+
+// memoFixtures are the memo values of the seed-memo workflows, one map per workflow in order. The
+// priorities sort as 1, 2, 5, 10 numerically and as 1, 10, 2, 5 as text, so a numeric sort and a
+// text sort give different orders. The first two fixtures also start in tui-seed-b.
+var memoFixtures = []map[string]any{
+	{"owner": "alice", "priority": 2, "tags": []string{"blue"}, "team,region": "payments,eu", "deploy": map[string]any{"env": "dev"}},
+	{"owner": "bob", "priority": 10, "tags": []string{"green", "red"}, "team,region": "payments,us", "deploy": map[string]any{"env": "prod"}},
+	{"owner": "carol", "priority": 1, "tags": []string{"red"}, "team,region": "search,eu", "deploy": map[string]any{"env": "staging"}},
+	{"owner": "dave", "priority": 5, "tags": []string{}, "team,region": "search,us", "deploy": map[string]any{"env": "prod"}},
+}
+
+// memoID is the workflow ID of memo fixture i (1-based), scoped to the run ID.
+func memoID(runID string, i int) string {
+	return fmt.Sprintf("seed-memo-%s-%d", runID, i)
+}
 
 // customerAttrs tags a workflow with a customer, cycling through the fixed list.
 func customerAttrs(i int) map[string]any {
@@ -132,7 +146,7 @@ func ensureNamespace(ctx context.Context, namespace string) error {
 
 // startFixed starts a workflow unless the ID already has a run. It reports whether a new run started.
 // The existence check comes first because the SDK does not report a duplicate start as an error.
-func startFixed(ctx context.Context, c client.Client, id string, fn any, reuse enumspb.WorkflowIdReusePolicy, attrs map[string]any, timeout time.Duration, args ...any) (bool, error) {
+func startFixed(ctx context.Context, c client.Client, id string, fn any, reuse enumspb.WorkflowIdReusePolicy, attrs, memo map[string]any, timeout time.Duration, args ...any) (bool, error) {
 	_, err := c.DescribeWorkflowExecution(ctx, id, "")
 	var notFound *serviceerror.NotFound
 	if err == nil {
@@ -141,16 +155,17 @@ func startFixed(ctx context.Context, c client.Client, id string, fn any, reuse e
 	if !errors.As(err, &notFound) {
 		return false, fmt.Errorf("describe %s: %w", id, err)
 	}
-	return true, startRun(ctx, c, id, fn, reuse, attrs, timeout, args...)
+	return true, startRun(ctx, c, id, fn, reuse, attrs, memo, timeout, args...)
 }
 
 // startRun starts a run unconditionally, subject to the ID reuse policy.
-func startRun(ctx context.Context, c client.Client, id string, fn any, reuse enumspb.WorkflowIdReusePolicy, attrs map[string]any, timeout time.Duration, args ...any) error {
+func startRun(ctx context.Context, c client.Client, id string, fn any, reuse enumspb.WorkflowIdReusePolicy, attrs, memo map[string]any, timeout time.Duration, args ...any) error {
 	opts := client.StartWorkflowOptions{
 		ID:                       id,
 		TaskQueue:                taskQueue,
 		WorkflowIDReusePolicy:    reuse,
 		SearchAttributes:         attrs,
+		Memo:                     memo,
 		WorkflowExecutionTimeout: timeout,
 	}
 	if _, err := c.ExecuteWorkflow(ctx, opts, fn, args...); err != nil {
@@ -193,16 +208,15 @@ func seed(ctx context.Context, runID string) error {
 		return err
 	}
 	defer cb.Close()
-	cd, err := dial(namespaceDefault)
-	if err != nil {
-		return err
-	}
-	defer cd.Close()
 
 	k := &counter{}
 	reject := enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE
 	start := func(c client.Client, id string, fn any, attrs map[string]any, timeout time.Duration, args ...any) error {
-		started, err := startFixed(ctx, c, id, fn, reject, attrs, timeout, args...)
+		started, err := startFixed(ctx, c, id, fn, reject, attrs, nil, timeout, args...)
+		return k.record(id, started, err)
+	}
+	startMemo := func(c client.Client, id string, memo map[string]any) error {
+		started, err := startFixed(ctx, c, id, SeedMemo, reject, map[string]any{searchAttrRun: runID}, memo, 0)
 		return k.record(id, started, err)
 	}
 
@@ -249,7 +263,7 @@ func seed(ctx context.Context, runID string) error {
 		return err
 	}
 	// Terminated is started and then terminated by the seeder, once, on the first seed.
-	terminatedStarted, err := startFixed(ctx, ca, "seed-terminated-1", SeedWaitForSignal, reject, nil, 0)
+	terminatedStarted, err := startFixed(ctx, ca, "seed-terminated-1", SeedWaitForSignal, reject, nil, nil, 0)
 	if err := k.record("seed-terminated-1", terminatedStarted, err); err != nil {
 		return err
 	}
@@ -270,6 +284,22 @@ func seed(ctx context.Context, runID string) error {
 		return err
 	}
 
+	// Memo set: run-scoped, with memo values for the table columns. Only the first two also start in
+	// tui-seed-b, for the all-namespaces view. A parent runs one child, for the parent and root columns.
+	for i, memo := range memoFixtures {
+		if err := startMemo(ca, memoID(runID, i+1), memo); err != nil {
+			return err
+		}
+		if i < 2 {
+			if err := startMemo(cb, memoID(runID, i+1), memo); err != nil {
+				return err
+			}
+		}
+	}
+	if err := start(ca, fmt.Sprintf("seed-memo-parent-%s", runID), SeedMemoParent, map[string]any{searchAttrRun: runID}, 0, runID); err != nil {
+		return err
+	}
+
 	// Volume set, skipped when it is already complete.
 	existingVolume, err := countWorkflows(ctx, ca, namespaceA, "WorkflowType = 'SeedVolume' AND ExecutionStatus = 'Completed'")
 	if err != nil {
@@ -287,16 +317,6 @@ func seed(ctx context.Context, runID string) error {
 		return err
 	}
 	if err := ensureSchedule(ctx, ca, "tempolens-seed-sched-paused", time.Hour, true); err != nil {
-		return err
-	}
-
-	// Default namespace: a few plain workflows only, with no custom search attributes.
-	for i := 1; i <= 2; i++ {
-		if err := start(cd, fmt.Sprintf("seed-default-completed-%d", i), SeedGreet, nil, 0, fmt.Sprintf("default-%d", i)); err != nil {
-			return err
-		}
-	}
-	if err := start(cd, "seed-default-running-1", SeedWaiting, nil, 0); err != nil {
 		return err
 	}
 
@@ -470,7 +490,7 @@ func resetDisposables(ctx context.Context, runID string, count int) error {
 	reuse := enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE
 	for i := 1; i <= count; i++ {
 		attrs := runAttrs(runID, i)
-		if err := startRun(ctx, c, fmt.Sprintf("%s%d", disposablePrefix, i), SeedWaiting, reuse, attrs, 0); err != nil {
+		if err := startRun(ctx, c, fmt.Sprintf("%s%d", disposablePrefix, i), SeedWaiting, reuse, attrs, nil, 0); err != nil {
 			return err
 		}
 	}
@@ -481,7 +501,7 @@ func resetDisposables(ctx context.Context, runID string, count int) error {
 func runWorkers() error {
 	var clients []client.Client
 	var workers []worker.Worker
-	for _, ns := range []string{namespaceA, namespaceB, namespaceDefault} {
+	for _, ns := range []string{namespaceA, namespaceB} {
 		c, err := dial(ns)
 		if err != nil {
 			return err
@@ -489,7 +509,7 @@ func runWorkers() error {
 		clients = append(clients, c)
 		w := worker.New(c, taskQueue, worker.Options{})
 		for _, fn := range []any{SeedWaiting, SeedWaitForSignal, SeedStuck, SeedGreet, SeedFailing, SeedParent, SeedChild,
-			SeedParentRunning, SeedContinueAsNew, SeedSignaler, SeedBig, SeedVolume, SeedScheduled} {
+			SeedParentRunning, SeedContinueAsNew, SeedSignaler, SeedBig, SeedVolume, SeedMemo, SeedMemoParent, SeedScheduled} {
 			w.RegisterWorkflow(fn)
 		}
 		for _, fn := range []any{SleepHeartbeat, AlwaysFail, Greet} {
@@ -545,16 +565,21 @@ func fixedExpectations(runID string) []expectation {
 		add(namespaceA, fmt.Sprintf("seed-failed-%s-%d", runID, i), "FAILED")
 	}
 	add(namespaceA, fmt.Sprintf("seed-timeout-%s-1", runID), "TIMED_OUT")
-	add(namespaceDefault, "seed-default-completed-1", "COMPLETED")
-	add(namespaceDefault, "seed-default-completed-2", "COMPLETED")
-	add(namespaceDefault, "seed-default-running-1", "RUNNING")
+	for i := 1; i <= len(memoFixtures); i++ {
+		add(namespaceA, memoID(runID, i), "COMPLETED")
+		if i <= 2 {
+			add(namespaceB, memoID(runID, i), "COMPLETED")
+		}
+	}
+	add(namespaceA, fmt.Sprintf("seed-memo-parent-%s", runID), "COMPLETED")
+	add(namespaceA, fmt.Sprintf("seed-memo-parent-%s-child", runID), "COMPLETED")
 	return out
 }
 
 func verify(ctx context.Context, runID string) error {
 	var problems []string
 	clients := map[string]client.Client{}
-	for _, ns := range []string{namespaceA, namespaceB, namespaceDefault} {
+	for _, ns := range []string{namespaceA, namespaceB} {
 		c, err := dial(ns)
 		if err != nil {
 			return err
@@ -607,12 +632,26 @@ func verify(ctx context.Context, runID string) error {
 	for _, want := range []struct {
 		workflowType string
 		count        int64
-	}{{"SeedFailing", 3}, {"SeedWaitForSignal", 1}} {
+	}{{"SeedFailing", 3}, {"SeedWaitForSignal", 1}, {"SeedMemo", int64(len(memoFixtures))}} {
 		query := fmt.Sprintf("%s = '%s' AND WorkflowType = '%s'", searchAttrRun, runID, want.workflowType)
 		if n, err := countWorkflows(ctx, ca, namespaceA, query); err != nil {
 			return err
 		} else if n != want.count {
 			problems = append(problems, fmt.Sprintf("SeedRun=%s %s: %d workflows, want %d", runID, want.workflowType, n, want.count))
+		}
+	}
+
+	// Each memo workflow must carry every fixture key, including the key with a comma.
+	for i, memo := range memoFixtures {
+		desc, err := ca.DescribeWorkflowExecution(ctx, memoID(runID, i+1), "")
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("%s: missing (%v)", memoID(runID, i+1), err))
+			continue
+		}
+		for key := range memo {
+			if _, ok := desc.GetWorkflowExecutionInfo().GetMemo().GetFields()[key]; !ok {
+				problems = append(problems, fmt.Sprintf("%s: memo key %q missing", memoID(runID, i+1), key))
+			}
 		}
 	}
 
@@ -641,7 +680,7 @@ func verify(ctx context.Context, runID string) error {
 
 func printCounts(ctx context.Context, clients map[string]client.Client) {
 	statuses := []string{"Running", "Completed", "Failed", "TimedOut", "Terminated", "Canceled", "ContinuedAsNew"}
-	for _, ns := range []string{namespaceA, namespaceB, namespaceDefault} {
+	for _, ns := range []string{namespaceA, namespaceB} {
 		var parts []string
 		for _, s := range statuses {
 			n, err := countWorkflows(ctx, clients[ns], ns, fmt.Sprintf("ExecutionStatus = '%s'", s))

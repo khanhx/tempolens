@@ -9,7 +9,7 @@ LOCAL TEST ONLY. Nothing in this directory is for production. Every password, cl
 
 ## Seed
 
-The seed targets `TEMPORAL_ADDRESS` (default `localhost:7233`). It uses only the namespaces `tui-seed-a`, `tui-seed-b` and `default`. It never touches `gateway`, `temporal-system`, or any other namespace.
+The seed targets `TEMPORAL_ADDRESS` (default `localhost:7233`). It uses only the namespaces `tui-seed-a` and `tui-seed-b`. It never touches `default`, `gateway`, `temporal-system`, or any other namespace.
 
 ```sh
 cd test/seed
@@ -23,8 +23,9 @@ GOTOOLCHAIN=auto go run . verify --run-id <id>         # exits non-zero if any m
 - `seed` resets `seed-reset-1` once it has completed, which needs the worker running. Without a worker it prints a warning and `verify` reports the missing reset.
 - `reset-disposables` terminates every running `tempolens-e2e-disposable-*` in `tui-seed-a` with reason `seed reset`, then starts `--count` fresh runs.
 - `verify` checks each fixed row for its expected status, the can-1 run chain, the reset lineage, the volume count and the schedule pause state.
+- Memo set: `seed-memo-<run-id>-1` to `-4` in `tui-seed-a` (1 and 2 also in `tui-seed-b`) carry the memo keys `owner`, `priority`, `tags`, `deploy` and `team,region`, with the values in `memoFixtures` (`seed/main.go`). `seed-memo-parent-<run-id>` runs one child, `seed-memo-parent-<run-id>-child`. `verify` checks their status and memo keys.
 
-All seed workflows run on task queue `tempolens-seed`, so the live `default` worker never picks them up.
+All seed workflows run on task queue `tempolens-seed`, so no other worker picks them up.
 
 ### Search attributes
 
@@ -34,7 +35,7 @@ All seed workflows run on task queue `tempolens-seed`, so the live `default` wor
 - `SeedPriority` (Int): the failed, timeout and disposable runs.
 - `SeedCustomer` (Keyword): the running and completed workflows, with values `acme`, `globex` and `initech`.
 
-They are not defined in `default`, and the seed never sets them there. Creating them is a one-time setup step. The seed does not create them.
+They are not defined in `default`. Creating them is a one-time setup step. The seed does not create them.
 
 ## Dex
 

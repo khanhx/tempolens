@@ -155,6 +155,20 @@ func SeedVolume(_ workflow.Context, _ int) error {
 	return nil
 }
 
+// SeedMemo completes at once. Its memo, set at start, is the fixture for the memo table columns.
+func SeedMemo(_ workflow.Context) error {
+	return nil
+}
+
+// SeedMemoParent runs one child in the same namespace, so the parent and root columns have values.
+func SeedMemoParent(ctx workflow.Context, runID string) error {
+	return workflow.ExecuteChildWorkflow(workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
+		TaskQueue:        taskQueue,
+		WorkflowID:       workflow.GetInfo(ctx).WorkflowExecution.ID + "-child",
+		SearchAttributes: map[string]any{searchAttrRun: runID},
+	}), SeedChild, 0).Get(ctx, nil)
+}
+
 // SeedScheduled is the action of the seed schedules.
 func SeedScheduled(_ workflow.Context) error {
 	return nil
