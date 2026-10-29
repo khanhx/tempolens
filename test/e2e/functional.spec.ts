@@ -343,7 +343,7 @@ test.describe('admin and CLI-parity actions (phase 15)', () => {
     }, { timeout: 30_000 }).toBeFalsy();
 
     await page.goto(`${BASE}/namespaces/${ns}`);
-    await page.getByRole('button', { name: 'Delete', exact: true }).click();
+    await page.getByRole('button', { name: 'Delete namespace', exact: true }).click();
     const del = page.locator('dialog').first();
     const submit = del.getByRole('button', { name: 'Delete namespace' });
     await expect(submit).toBeDisabled();
@@ -359,9 +359,57 @@ test.describe('admin and CLI-parity actions (phase 15)', () => {
   test('the protected default namespace has its delete action disabled, with the reason shown', async ({ browser }) => {
     const { context, page } = await signedIn(browser, 'admin');
     await page.goto(`${BASE}/namespaces/default`);
-    await expect(page.getByRole('button', { name: 'Delete', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Delete namespace', exact: true })).toBeDisabled();
     await expect(page.getByText(/protected namespace/i).first()).toBeVisible();
     await context.close();
+  });
+
+  test('admin deletes a tui-test namespace from the ⋯ menu on the namespace list', async ({ browser }) => {
+    const ns = `tui-test-ui-${RUN_ID}-menu-${Date.now().toString(36)}`;
+    const { context, page } = await signedIn(browser, 'admin');
+    await page.goto(`${BASE}/namespaces`);
+    await page.getByRole('button', { name: 'Create namespace' }).click();
+    const create = page.locator('dialog').first();
+    await create.getByLabel('Name', { exact: true }).fill(ns);
+    await create.getByLabel(/^Retention/).fill('1d');
+    await create.getByRole('button', { name: 'Create namespace' }).click();
+    await expect.poll(() => apiGet<{ namespaceInfo: { name: string } }>('admin', `/api/v1/namespaces/${ns}`).then((d) => d.namespaceInfo.name).catch(() => ''), { timeout: 20_000 }).toBe(ns);
+
+    // Temporal's frontend sees a new namespace a few seconds after RegisterNamespace answers.
+    await expect.poll(async () => {
+      const res = await fetch(`${BASE}/api/v1/namespaces/${ns}/search-attributes`, { headers: { Cookie: `__Host-tempolens_session=${cookieFor('admin')}` } });
+      return res.status;
+    }, { timeout: 30_000 }).toBe(200);
+
+    await page.goto(`${BASE}/namespaces`);
+    const row = page.getByRole('row').filter({ has: page.getByRole('link', { name: ns, exact: true }) });
+    await expect(row.getByRole('link', { name: 'Details' })).toHaveAttribute('href', `/namespaces/${ns}`);
+    await row.getByLabel(`Actions for ${ns}`).click();
+    await row.getByRole('menuitem', { name: 'Delete namespace' }).click();
+    const del = page.locator('dialog').first();
+    const submit = del.getByRole('button', { name: 'Delete namespace' });
+    await expect(submit).toBeDisabled();
+    await del.getByRole('textbox').first().fill(ns);
+    const deleted = page.waitForResponse((r) => r.url().includes('/api/x/namespace') && r.request().method() === 'DELETE');
+    await submit.click();
+    expect((await deleted).status()).toBe(200);
+    await context.close();
+  });
+
+  test('the ⋯ menu disables Delete namespace for the reader and for a protected namespace', async ({ browser }) => {
+    for (const [user, ns, reason] of [
+      ['reader', NS, /write access/],
+      ['admin', 'default', /protected namespace/],
+    ] as const) {
+      const { context, page } = await signedIn(browser, user);
+      await page.goto(`${BASE}/namespaces`);
+      const row = page.getByRole('row').filter({ has: page.getByRole('link', { name: ns, exact: true }) });
+      await row.getByLabel(`Actions for ${ns}`).click();
+      const item = row.getByRole('menuitem', { name: 'Delete namespace' });
+      await expect(item).toBeDisabled();
+      await expect(item).toHaveAttribute('title', reason);
+      await context.close();
+    }
   });
 
   test('the writer and the reader cannot create a namespace or change one', async ({ browser }) => {
@@ -371,7 +419,7 @@ test.describe('admin and CLI-parity actions (phase 15)', () => {
       await expect(page.getByRole('button', { name: 'Create namespace' })).toBeDisabled();
       await page.goto(`${BASE}/namespaces/${NS}`);
       await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeDisabled();
-      await expect(page.getByRole('button', { name: 'Delete', exact: true })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Delete namespace', exact: true })).toBeDisabled();
       await expect(page.getByRole('button', { name: 'Add attribute' })).toBeDisabled();
       await expect(page.getByRole('button', { name: 'Remove selected' })).toHaveCount(0);
       await context.close();
