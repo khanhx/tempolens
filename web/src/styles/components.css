@@ -374,6 +374,8 @@ h3 {
   height: 32px;
   border-bottom: 1px solid var(--c-border);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .dt td {
@@ -389,6 +391,11 @@ h3 {
 }
 
 .dt-sort {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
   border: 0;
   background: transparent;
   font-weight: 600;
@@ -417,6 +424,41 @@ h3 {
 
 .dt th.drop-after {
   box-shadow: inset -2px 0 0 var(--c-accent);
+}
+
+/* Column resize handle on the right edge of a header */
+.dt-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.dt-resize:hover,
+.dt-resize:focus-visible {
+  background: var(--c-accent);
+}
+
+.dt-resize:focus-visible {
+  outline: none;
+}
+
+.dt-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* Off-screen box that measures a cell's content for auto-fit */
+.dt-measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: max-content;
+  visibility: hidden;
+  white-space: nowrap;
 }
 
 .column-list {

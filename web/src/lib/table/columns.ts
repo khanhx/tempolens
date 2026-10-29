@@ -90,6 +90,41 @@ export function saveColumns(ns: string, ids: readonly string[] | null, storage: 
   }
 }
 
+/** Column widths in px by column id. Absent ids keep their default width. */
+export type ColumnWidths = Readonly<Record<string, number>>;
+
+export const MIN_COLUMN_WIDTH = 60;
+export const MAX_COLUMN_WIDTH = 2000;
+
+/** `px` rounded and clamped to the allowed column width. */
+export const clampWidth = (px: number) => Math.round(Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, Number.isFinite(px) ? px : MIN_COLUMN_WIDTH)));
+
+/** Widths preference key, beside the order under the same namespace key. Widths stay out of the URL to keep links short. */
+export const widthsKey = (ns: string) => `${columnsKey(ns)}.widths`;
+
+/** Saved widths; entries that are not numbers are dropped and the rest clamped. */
+export function loadWidths(ns: string, storage: StorageLike | undefined = defaultStorage()): ColumnWidths {
+  try {
+    const v: unknown = JSON.parse(storage?.getItem(widthsKey(ns)) ?? 'null');
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+    const out: Record<string, number> = {};
+    for (const [id, px] of Object.entries(v)) if (typeof px === 'number' && Number.isFinite(px)) out[id] = clampWidth(px);
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/** Saves the widths, or forgets them when there are none. Storage errors are ignored: the widths last for the page. */
+export function saveWidths(ns: string, widths: ColumnWidths, storage: StorageLike | undefined = defaultStorage()): void {
+  try {
+    if (Object.keys(widths).length) storage?.setItem(widthsKey(ns), JSON.stringify(widths));
+    else storage?.removeItem(widthsKey(ns));
+  } catch {
+    // Quota exceeded or storage disabled.
+  }
+}
+
 /** `ids` with `id` moved to `index` (clamped); unchanged when `id` is absent. */
 export function moveColumn(ids: readonly string[], id: string, index: number): string[] {
   const from = ids.indexOf(id);

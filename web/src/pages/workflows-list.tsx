@@ -37,7 +37,8 @@ import type { NamespaceSearchAttributes } from '../lib/server-info';
 import { clusterInfo, describeNamespace, hasCapability, searchAttributes } from '../lib/server-info';
 import type { SortType } from '../lib/sort';
 import { sortRows, supportsOrderBy } from '../lib/sort';
-import { isMemoId, loadColumns, memoId, memoKeyOf, memoKeys, dropColumn, resolveColumns, saveColumns } from '../lib/table/columns';
+import type { ColumnWidths } from '../lib/table/columns';
+import { isMemoId, loadColumns, loadWidths, memoId, memoKeyOf, memoKeys, dropColumn, resolveColumns, saveColumns, saveWidths } from '../lib/table/columns';
 import type * as MemoDecode from '../lib/table/memo-decode';
 import { nextSort } from '../lib/table/sort-cycle';
 import type { WorkflowExecutionInfo } from '../lib/temporal';
@@ -710,6 +711,7 @@ export default function WorkflowsList() {
     width: c.width,
     sortable: !!c.sortType,
     movable: true,
+    resizable: true,
     tag: c.tag,
     hint: c.hint,
     render: c.render ? (r) => c.render?.(r, rowNamespace(r, ns)) : (r) => display(c.get(r)),
@@ -742,6 +744,7 @@ export default function WorkflowsList() {
       id: 'row-actions',
       label: 'Actions',
       width: '64px',
+      resizable: true,
       render: (r) => (
         <button type="button" class="btn btn-ghost btn-sm" aria-label={`Actions for ${r.execution.workflowId}`} onClick={() => setRowAction({ row: r, kind: null })}>
           ⋯
@@ -768,6 +771,19 @@ export default function WorkflowsList() {
   const setColumns = (ids: string[] | null) => {
     saveColumns(prefsKey, ids);
     update({ cols: ids?.length ? ids : null });
+  };
+  // Widths are saved beside the order but kept out of the URL, so links stay short.
+  // The state keeps them for the page when storage is unavailable.
+  const storedWidths = useMemo(() => loadWidths(prefsKey), [prefsKey]);
+  const [widthEdit, setWidthEdit] = useState<{ key: string; widths: ColumnWidths } | null>(null);
+  const widths = widthEdit?.key === prefsKey ? widthEdit.widths : storedWidths;
+  const setWidths = (next: ColumnWidths) => {
+    saveWidths(prefsKey, next);
+    setWidthEdit({ key: prefsKey, widths: next });
+  };
+  const resetColumns = () => {
+    setColumns(null);
+    setWidths({});
   };
 
   return (
@@ -825,7 +841,7 @@ export default function WorkflowsList() {
         <div class="toolbar-spacer" />
         {canBatch && <ActionMenu label={selected.size ? `Bulk actions (${selected.size})` : 'Bulk actions'} items={bulkItems} />}
         <PresetMenu ns={prefsKey} state={state} onApply={(p) => update({ query: p.query, range: p.range })} />
-        <ColumnPicker all={allColumns.map((c) => ({ id: c.id, label: c.label, tag: c.tag }))} visible={visibleIds} onChange={setColumns} onReset={() => setColumns(null)}>
+        <ColumnPicker all={allColumns.map((c) => ({ id: c.id, label: c.label, tag: c.tag }))} visible={visibleIds} onChange={setColumns} onReset={resetColumns}>
           <MemoKeyForm onAdd={(key) => !visibleIds.includes(memoId(key)) && setColumns([...visibleIds, memoId(key)])} />
         </ColumnPicker>
         {!cross && (
@@ -883,6 +899,8 @@ export default function WorkflowsList() {
           sort={state.sort}
           onSort={onSort}
           onMove={(id, target, after) => setColumns(dropColumn(visibleIds, id, target, after))}
+          widths={widths}
+          onResize={(id, width) => setWidths({ ...widths, [id]: width })}
           caption={cross ? 'Workflows in all selected namespaces' : `Workflows in ${ns}`}
           empty={data.loading ? 'Loading…' : 'No workflows match.'}
         />

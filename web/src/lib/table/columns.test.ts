@@ -1,6 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import { listSearch, parseListState } from '../query/url-state';
-import { columnsKey, decodeColumns, dropColumn, encodeColumns, isMemoId, loadColumns, memoId, memoKeyOf, memoKeys, moveColumn, pickerOrder, resolveColumns, saveColumns } from './columns';
+import {
+  clampWidth,
+  columnsKey,
+  decodeColumns,
+  dropColumn,
+  encodeColumns,
+  isMemoId,
+  loadColumns,
+  loadWidths,
+  MAX_COLUMN_WIDTH,
+  memoId,
+  memoKeyOf,
+  memoKeys,
+  MIN_COLUMN_WIDTH,
+  moveColumn,
+  pickerOrder,
+  resolveColumns,
+  saveColumns,
+  saveWidths,
+  widthsKey,
+} from './columns';
 
 function memoryStorage(initial: Record<string, string> = {}) {
   const data = new Map(Object.entries(initial));
@@ -118,6 +138,44 @@ describe('saved column order', () => {
     };
     expect(() => saveColumns('a', ['id'], failing)).not.toThrow();
     expect(loadColumns('x', undefined)).toBeNull();
+  });
+});
+
+describe('saved column widths', () => {
+  it('saves, loads and clears widths per namespace, beside the order', () => {
+    const s = memoryStorage();
+    saveWidths('ns-a', { id: 240, [memoId('a,b')]: 90 }, s);
+    saveWidths('*', { namespace: 100 }, s);
+    expect(widthsKey('ns-a')).toBe(`${columnsKey('ns-a')}.widths`);
+    expect(loadWidths('ns-a', s)).toEqual({ id: 240, 'memo:a,b': 90 });
+    expect(loadWidths('*', s)).toEqual({ namespace: 100 });
+    saveWidths('ns-a', {}, s);
+    expect(loadWidths('ns-a', s)).toEqual({});
+    expect(s.data.has(widthsKey('ns-a'))).toBe(false);
+  });
+
+  it('clamps to the minimum and maximum width', () => {
+    expect(clampWidth(10)).toBe(MIN_COLUMN_WIDTH);
+    expect(clampWidth(99.6)).toBe(100);
+    expect(clampWidth(1e6)).toBe(MAX_COLUMN_WIDTH);
+    expect(clampWidth(Number.NaN)).toBe(MIN_COLUMN_WIDTH);
+    const s = memoryStorage({ [widthsKey('a')]: JSON.stringify({ id: 5, run: 'wide', type: 150 }) });
+    expect(loadWidths('a', s)).toEqual({ id: MIN_COLUMN_WIDTH, type: 150 });
+  });
+
+  it('ignores corrupt or wrong-shaped values and storage errors', () => {
+    const s = memoryStorage({ [widthsKey('a')]: '{', [widthsKey('b')]: '[1,2]', [widthsKey('c')]: 'null' });
+    expect(loadWidths('a', s)).toEqual({});
+    expect(loadWidths('b', s)).toEqual({});
+    expect(loadWidths('c', s)).toEqual({});
+    const failing = {
+      ...s,
+      setItem: () => {
+        throw new Error('quota');
+      },
+    };
+    expect(() => saveWidths('a', { id: 100 }, failing)).not.toThrow();
+    expect(loadWidths('x', undefined)).toEqual({});
   });
 });
 

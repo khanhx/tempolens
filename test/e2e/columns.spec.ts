@@ -1,5 +1,6 @@
 // LOCAL TEST ONLY. Workflow list columns, in the single-namespace and the all-namespaces views:
-// header sort, add, remove and reorder, the URL and saved-preference round trip, memo and property columns.
+// header sort, add, remove, reorder and resize, the URL and saved-preference round trip, memo and property columns,
+// and the auto-refresh periods.
 // Requires RUN_ID (seed run) and cookies in out/writer.cookie, as functional.spec.ts does.
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
@@ -125,6 +126,32 @@ async function columnValues(page: Page, label: string, rowText = `seed-memo-${RU
 async function savedCols(page: Page, prefsKey: string): Promise<string[] | null> {
   const raw = await page.evaluate((key) => localStorage.getItem(key), `tempolens.columns.${prefsKey}`);
   return raw === null ? null : (JSON.parse(raw) as string[]);
+}
+
+async function savedWidths(page: Page, prefsKey: string): Promise<Record<string, number> | null> {
+  const raw = await page.evaluate((key) => localStorage.getItem(key), `tempolens.columns.${prefsKey}.widths`);
+  return raw === null ? null : (JSON.parse(raw) as Record<string, number>);
+}
+
+async function headerWidth(page: Page, label: RegExp): Promise<number> {
+  await headerLabels(page);
+  const box = await page.getByRole('columnheader', { name: label }).boundingBox();
+  expect(box, `header ${label}`).not.toBeNull();
+  return box?.width ?? 0;
+}
+
+// Drags the Workflow ID resize handle by dx pixels with the mouse.
+async function dragResize(page: Page, dx: number) {
+  const handle = page.getByRole('separator', { name: 'Resize Workflow ID column' });
+  const box = await handle.boundingBox();
+  if (!box) throw new Error('resize handle not visible');
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + dx / 2, y, { steps: 4 });
+  await page.mouse.move(x + dx, y, { steps: 4 });
+  await page.mouse.up();
 }
 
 async function openPicker(page: Page) {
@@ -262,6 +289,55 @@ for (const view of VIEWS) {
       await page.goto(viewUrl(view));
       expect(await headerOrder(page, ['owner', 'priority'])).toEqual(['owner']);
       expect(await savedCols(page, view.prefsKey)).toEqual([COL.id, COL.owner]);
+      await context.close();
+    });
+
+    test('a dragged column width survives a reload, and the drag does not reorder', async ({ browser }) => {
+      const { context, page } = await signedIn(browser, 'writer');
+      await page.goto(viewUrl(view, colsParam([COL.id, COL.owner, COL.priority])));
+      const order = await headerOrder(page, ['Workflow ID', 'owner', 'priority']);
+      const before = await headerWidth(page, /Workflow ID/);
+      await dragResize(page, 120);
+      await expect.poll(() => savedWidths(page, view.prefsKey)).not.toBeNull();
+      const saved = (await savedWidths(page, view.prefsKey))?.[COL.id] ?? 0;
+      expect(saved).toBeGreaterThan(before + 60);
+      expect(await headerOrder(page, ['Workflow ID', 'owner', 'priority'])).toEqual(order);
+      // Widths stay out of the URL.
+      expect(page.url()).not.toContain('width');
+
+      await page.reload();
+      expect(Math.abs((await headerWidth(page, /Workflow ID/)) - saved)).toBeLessThanOrEqual(2);
+      await context.close();
+    });
+
+    test('the arrow keys on a focused resize handle change the width by 10 px', async ({ browser }) => {
+      const { context, page } = await signedIn(browser, 'writer');
+      await page.goto(viewUrl(view, colsParam([COL.id, COL.owner])));
+      await headerLabels(page);
+      const handle = page.getByRole('separator', { name: 'Resize Workflow ID column' });
+      await handle.focus();
+      await handle.press('ArrowRight');
+      const first = (await savedWidths(page, view.prefsKey))?.[COL.id] ?? 0;
+      await handle.press('ArrowRight');
+      expect((await savedWidths(page, view.prefsKey))?.[COL.id]).toBe(first + 10);
+      await handle.press('ArrowLeft');
+      expect((await savedWidths(page, view.prefsKey))?.[COL.id]).toBe(first);
+      await context.close();
+    });
+
+    test('Reset columns restores the default column widths', async ({ browser }) => {
+      const { context, page } = await signedIn(browser, 'writer');
+      // A fresh context has no saved layout, so this is the default width.
+      await page.goto(viewUrl(view));
+      const before = await headerWidth(page, /Workflow ID/);
+      await dragResize(page, 150);
+      await expect.poll(() => savedWidths(page, view.prefsKey)).not.toBeNull();
+      expect(await headerWidth(page, /Workflow ID/)).toBeGreaterThan(before + 100);
+
+      const panel = await openPicker(page);
+      await panel.getByRole('button', { name: 'Reset columns' }).click();
+      expect(await savedWidths(page, view.prefsKey)).toBeNull();
+      expect(Math.abs((await headerWidth(page, /Workflow ID/)) - before)).toBeLessThanOrEqual(2);
       await context.close();
     });
 
