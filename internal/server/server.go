@@ -66,9 +66,9 @@ type server struct {
 	streams  *limits.Streams
 	callback string
 
-	healthz, readyz, sso, callbackH, logout http.Handler
-	settings, gateway, xapi, apiNotFound    http.Handler
-	assets, spa                             http.Handler
+	healthz, readyz, sso, callbackH, logout, signedOut http.Handler
+	settings, gateway, xapi, apiNotFound               http.Handler
+	assets, spa                                        http.Handler
 }
 
 // New returns the complete HTTP handler.
@@ -100,6 +100,7 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 		s.callbackH = allow(get, http.HandlerFunc(o.OIDC.Callback))
 	}
 	s.logout = allow([]string{http.MethodPost}, auth.Logout(o.Audit))
+	s.signedOut = allow(get, auth.SignedOut(o.Config.Auth.Disabled))
 	s.settings = auth.RequireAPI(allow(get, gateway.Settings(o.Config, o.Version)))
 	s.gateway = auth.RequireAPI(allow([]string{http.MethodGet, http.MethodPost, http.MethodDelete},
 		s.limitStreams(limitBody(gw))))
@@ -143,6 +144,8 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 		s.callbackH.ServeHTTP(w, r)
 	case p == "/auth/logout":
 		s.logout.ServeHTTP(w, r)
+	case p == "/auth/signed-out":
+		s.signedOut.ServeHTTP(w, r)
 	case strings.HasPrefix(p, "/auth/"):
 		apierr.Write(w, http.StatusNotFound, codes.NotFound, "no such auth route")
 	case p == "/api/v1/settings":

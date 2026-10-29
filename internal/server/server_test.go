@@ -128,6 +128,30 @@ func TestLogout(t *testing.T) {
 	}
 }
 
+func TestSignedOutRoute(t *testing.T) {
+	env := testutil.NewEnv(t, nil)
+	// Reached without a session, through the full middleware chain.
+	w := env.Do(env.NewRequest(t, testutil.Nobody, http.MethodGet, "/auth/signed-out", ""))
+	if w.Code != http.StatusOK || w.Header().Get("Location") != "" {
+		t.Fatalf("signed-out page: %d location %q, want 200 and no redirect", w.Code, w.Header().Get("Location"))
+	}
+	if !strings.Contains(w.Body.String(), `href="/auth/sso?returnTo=%2F"`) {
+		t.Fatalf("signed-out page lacks the sign-in link: %s", w.Body.String())
+	}
+	if got := w.Header().Get("Content-Security-Policy"); !strings.Contains(got, "script-src 'self'; style-src 'self'") {
+		t.Errorf("CSP %q, want the strict policy", got)
+	}
+	if w := env.Do(env.NewRequest(t, testutil.Nobody, http.MethodPost, "/auth/signed-out", "")); w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST signed-out: %d, want 405", w.Code)
+	}
+
+	disabled := authDisabledEnv(t, config.RoleRead)
+	w = disabled.Do(disabled.NewRequest(t, testutil.Nobody, http.MethodGet, "/auth/signed-out", ""))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `href="/"`) {
+		t.Fatalf("auth disabled signed-out page: %d %s", w.Code, w.Body.String())
+	}
+}
+
 func TestUnauthenticated(t *testing.T) {
 	env := testutil.NewEnv(t, nil)
 	if w := env.Do(env.NewRequest(t, testutil.Nobody, http.MethodGet, "/api/v1/namespaces", "")); w.Code != http.StatusUnauthorized ||
