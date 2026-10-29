@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyTheme, nextTheme, persistedSignal } from './prefs';
+import { applyTheme, isAutoRefreshPeriod, nextTheme, persistedSignal } from './prefs';
 
 class MemoryStorage {
   readonly data = new Map<string, string>();
@@ -43,6 +43,19 @@ describe('persistedSignal', () => {
     const s = persistedSignal('q', 5, isNumber, throwing);
     s.value = 6;
     expect(s.value).toBe(6);
+  });
+});
+
+describe('auto-refresh period', () => {
+  it('accepts off, 5, 15 and 60 seconds only', () => {
+    for (const v of [0, 5, 15, 60]) expect(isAutoRefreshPeriod(v)).toBe(true);
+    for (const v of [1, 30, '5', null]) expect(isAutoRefreshPeriod(v)).toBe(false);
+  });
+
+  it('reads a stored 5 s period', () => {
+    const storage = new MemoryStorage();
+    storage.setItem('tempolens.autoRefresh', '5');
+    expect(persistedSignal('autoRefresh', 0, isAutoRefreshPeriod, storage).value).toBe(5);
   });
 });
 

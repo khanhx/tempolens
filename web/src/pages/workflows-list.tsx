@@ -22,7 +22,8 @@ import { api, seg } from '../lib/api';
 import type { Payload } from '../lib/payload/decode';
 import { decodeFields, decodePayload } from '../lib/payload/decode';
 import { stringifyJson } from '../lib/payload/json-bigint';
-import { autoRefresh, listView } from '../lib/prefs';
+import { isRateLimited, RATE_LIMITED_PERIOD, startAutoRefresh } from '../lib/auto-refresh';
+import { autoRefresh, isAutoRefreshPeriod, listView } from '../lib/prefs';
 import type { Filter, SAType } from '../lib/query/build';
 import { buildQuery, quoteString } from '../lib/query/build';
 import { parseQuery } from '../lib/query/parse';
@@ -580,39 +581,45 @@ export default function WorkflowsList() {
     [cross, selectionKey, ns, effectiveQuery, pageSize],
   );
 
-  const loadCounts = useCallback(async () => {
+  // Both loads resolve true when the server rate-limited them, for auto-refresh.
+  const loadCounts = useCallback(async (): Promise<boolean> => {
     const g = generation.current;
     setCounts((c) => ({ ...c, loading: true }));
     try {
       const where = splitOrderBy(effectiveQuery()).where;
       if (cross) {
         const res = await xapi.count(selection, where);
-        if (g !== generation.current) return;
+        if (g !== generation.current) return false;
         setCounts({ total: res.total ?? 0, byStatus: res.byStatus ?? {}, loading: false });
         setCountErrors(res.errors ?? []);
-        return;
+        return false;
       }
       const res = await api.get<CountResponse>(`/api/v1/namespaces/${seg(ns)}/workflow-count`, { query: `${where} GROUP BY ExecutionStatus`.trim() });
       if (g === generation.current) setCounts({ ...parseCounts(res), loading: false });
-    } catch {
+      return false;
+    } catch (err) {
       if (g === generation.current) setCounts({ total: null, byStatus: {}, loading: false });
+      return isRateLimited(err);
     }
   }, [cross, selectionKey, ns, effectiveQuery]);
 
-  const loadFirst = useCallback(async () => {
+  const loadFirst = useCallback(async (): Promise<boolean> => {
     const g = ++generation.current;
     setData((d) => ({ ...d, loading: true, error: null }));
-    void loadCounts();
+    const counted = loadCounts();
+    let limited = false;
     try {
       const res = await fetchPage(undefined);
-      if (g !== generation.current) return;
-      setData({ rows: res.executions, token: res.nextPageToken || undefined, loading: false, error: null, errors: res.errors });
-      setPage(0);
-      setSelected(new Set());
+      if (g === generation.current) {
+        setData({ rows: res.executions, token: res.nextPageToken || undefined, loading: false, error: null, errors: res.errors });
+        setPage(0);
+        setSelected(new Set());
+      }
     } catch (err) {
-      if (g !== generation.current) return;
-      setData({ rows: [], token: undefined, loading: false, error: err instanceof Error ? err : new Error(String(err)), errors: [] });
+      limited = isRateLimited(err);
+      if (g === generation.current) setData({ rows: [], token: undefined, loading: false, error: err instanceof Error ? err : new Error(String(err)), errors: [] });
     }
+    return (await counted) || limited;
   }, [fetchPage, loadCounts]);
 
   const loadMore = useCallback(async (): Promise<boolean> => {
@@ -639,20 +646,24 @@ export default function WorkflowsList() {
     void loadFirst();
   }, [loadFirst]);
 
-  const refresh = useCallback(() => {
+  const refresh = useCallback(
     // Reloading the list resets the loaded window, so only do it on the first page.
-    if (page === 0 && data.rows.length <= pageSize) void loadFirst();
-    else void loadCounts();
-  }, [page, data.rows.length, pageSize, loadFirst, loadCounts]);
+    () => (page === 0 && data.rows.length <= pageSize ? loadFirst() : loadCounts()),
+    [page, data.rows.length, pageSize, loadFirst, loadCounts],
+  );
 
+  // The timer reads the latest refresh and loading state through refs, so a
+  // load does not restart it. A 429 slows it for this visit only: the saved
+  // period stays, and changing the period clears the slowdown.
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+  const loadingRef = useRef(data.loading);
+  loadingRef.current = data.loading;
+  const [refreshSlowed, setRefreshSlowed] = useState(false);
   useEffect(() => {
-    const period = autoRefresh.value;
-    if (!period) return;
-    const t = window.setInterval(() => {
-      if (!document.hidden) refresh();
-    }, period * 1000);
-    return () => window.clearInterval(t);
-  }, [autoRefresh.value, refresh]);
+    setRefreshSlowed(false);
+    return startAutoRefresh({ period: autoRefresh.value, run: () => refreshRef.current(), busy: () => loadingRef.current, onSlowed: () => setRefreshSlowed(true) });
+  }, [autoRefresh.value]);
 
   const sorted = useMemo(
     () => (clientSort && clientSort.col.sortType ? sortRows(data.rows, clientSort.col.get, clientSort.col.sortType, clientSort.dir) : data.rows),
@@ -668,7 +679,7 @@ export default function WorkflowsList() {
   };
   const prev = () => !clientSort && page > 0 && setPage(page - 1);
 
-  useShortcuts({ ArrowLeft: prev, ArrowRight: () => void next(), r: refresh });
+  useShortcuts({ ArrowLeft: prev, ArrowRight: () => void next(), r: () => void refresh() });
 
   const filters = useMemo(() => parseQuery(state.query, sa.types), [state.query, sa.types]);
   const activeStatus = statusFilterValue(filters);
@@ -857,9 +868,13 @@ export default function WorkflowsList() {
           class="select"
           aria-label="Auto-refresh"
           value={String(autoRefresh.value)}
-          onChange={(e) => (autoRefresh.value = Number((e.currentTarget as HTMLSelectElement).value) as 0 | 15 | 60)}
+          onChange={(e) => {
+            const v: unknown = Number((e.currentTarget as HTMLSelectElement).value);
+            if (isAutoRefreshPeriod(v)) autoRefresh.value = v;
+          }}
         >
           <option value="0">Auto-refresh off</option>
+          <option value="5">Refresh every 5 s</option>
           <option value="15">Refresh every 15 s</option>
           <option value="60">Refresh every 60 s</option>
         </select>
@@ -876,6 +891,11 @@ export default function WorkflowsList() {
         </button>
       </div>
 
+      {refreshSlowed && (
+        <p class="muted" role="status">
+          Auto-refresh slowed to {RATE_LIMITED_PERIOD} s: rate limited.
+        </p>
+      )}
       {data.error && (
         <div class="alert alert-error" role="alert">
           {data.error.message}

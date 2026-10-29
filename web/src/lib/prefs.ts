@@ -64,8 +64,11 @@ export const timeMode = persistedSignal<TimeMode>('timeMode', 'relative', oneOf(
 export const timeZone = persistedSignal<TimeZoneMode>('timeZone', 'local', oneOf('local', 'utc'));
 export const navCollapsed = persistedSignal<boolean>('navCollapsed', false, isBoolean);
 export const lastNamespace = persistedSignal<string | null>('lastNamespace', null, isNamespaceOrNull);
+export const AUTO_REFRESH_PERIODS = [0, 5, 15, 60] as const;
+export type AutoRefreshPeriod = (typeof AUTO_REFRESH_PERIODS)[number];
+export const isAutoRefreshPeriod = (v: unknown): v is AutoRefreshPeriod => (AUTO_REFRESH_PERIODS as readonly unknown[]).includes(v);
 /** Workflow-list auto-refresh period in seconds; 0 is off. */
-export const autoRefresh = persistedSignal<0 | 15 | 60>('autoRefresh', 0, (v): v is 0 | 15 | 60 => v === 0 || v === 15 || v === 60);
+export const autoRefresh = persistedSignal<AutoRefreshPeriod>('autoRefresh', 0, isAutoRefreshPeriod);
 /** Workflow list as a table or a multi-run timeline. */
 export const listView = persistedSignal<'table' | 'timeline'>('listView', 'table', oneOf('table', 'timeline'));
 /** History view mode, as upstream's `eventView`. */

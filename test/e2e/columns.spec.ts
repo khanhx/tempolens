@@ -356,6 +356,21 @@ for (const view of VIEWS) {
   });
 }
 
+test.describe('auto-refresh', () => {
+  test('the select offers off, 5 s, 15 s and 60 s, and keeps the choice', async ({ browser }) => {
+    const { context, page } = await signedIn(browser, 'writer');
+    await page.goto(viewUrl(VIEWS[0]));
+    const select = page.getByRole('combobox', { name: 'Auto-refresh' });
+    await expect(select.locator('option')).toHaveText(['Auto-refresh off', 'Refresh every 5 s', 'Refresh every 15 s', 'Refresh every 60 s']);
+    await select.selectOption('5');
+    expect(await page.evaluate(() => localStorage.getItem('tempolens.autoRefresh'))).toBe('5');
+    await page.reload();
+    await expect(page.getByRole('combobox', { name: 'Auto-refresh' })).toHaveValue('5');
+    await page.getByRole('combobox', { name: 'Auto-refresh' }).selectOption('0');
+    await context.close();
+  });
+});
+
 test.describe('property columns (single namespace)', () => {
   const view = VIEWS[0];
 
