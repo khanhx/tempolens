@@ -96,7 +96,7 @@ export default function NamespaceDetail() {
               title={protectedWhy ?? deniedReason(['namespace']) ?? undefined}
               onClick={() => setDialog({ kind: 'delete' })}
             >
-              Delete
+              Delete namespace
             </button>
           )}
         </div>

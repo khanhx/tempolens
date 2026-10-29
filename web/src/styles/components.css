@@ -288,6 +288,21 @@ h3 {
   gap: var(--s-2);
 }
 
+/* Per-row buttons at the end of a table row, such as Details and the ⋯ menu */
+.row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-2);
+  white-space: nowrap;
+}
+
+.row-actions .menu > summary {
+  height: 24px;
+  padding: 0 var(--s-2);
+  font-size: var(--fs-sm);
+}
+
 /* Menus built on <details> */
 .menu {
   position: relative;
