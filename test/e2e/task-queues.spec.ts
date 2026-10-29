@@ -66,7 +66,7 @@ test.describe('task queue suggestions', () => {
     // Both queues were opened in this browser, so they come back as recent suggestions.
     await page.goto(`${BASE}/namespaces/${NS}/task-queues`);
     await box.focus();
-    await expect(page.getByRole('option').first()).toContainText('e2e-no-such-queue');
+    await expect(page.getByRole('listbox', { name: 'Task queue name suggestions' }).getByRole('option').first()).toContainText('e2e-no-such-queue');
     await context.close();
   });
 });

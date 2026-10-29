@@ -143,7 +143,17 @@ async function headerWidth(page: Page, label: RegExp): Promise<number> {
 // Drags the Workflow ID resize handle by dx pixels with the mouse.
 async function dragResize(page: Page, dx: number) {
   const handle = page.getByRole('separator', { name: 'Resize Workflow ID column' });
-  const box = await handle.boundingBox();
+  // Banners that arrive with the data (the all-namespaces warnings) move the
+  // header, so read the position only once it has held still for 250 ms.
+  let box = await handle.boundingBox();
+  await expect
+    .poll(async () => {
+      const before = box;
+      await page.waitForTimeout(250);
+      box = await handle.boundingBox();
+      return !!box && !!before && box.x === before.x && box.y === before.y;
+    }, { timeout: 10_000 })
+    .toBe(true);
   if (!box) throw new Error('resize handle not visible');
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;
