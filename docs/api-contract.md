@@ -1,4 +1,4 @@
-Contract-Version: 7
+Contract-Version: 8
 
 # Tempolens HTTP API contract
 
@@ -546,7 +546,11 @@ Role mapping, with claim groups compared exactly (untrimmed): `admin` if a group
 
 ### 4.3 `POST /auth/logout`
 
-CSRF-checked like every non-GET request (section 1.1). Clears the session cookie and returns 204 with no body. It does not log out of Dex. The SPA then navigates to `/`, which leads to a new login. With auth disabled it is a no-op 204.
+CSRF-checked like every non-GET request (section 1.1). Clears the session cookie and returns 204 with no body. It does not log out of Dex. The SPA then navigates to `/auth/signed-out` (section 4.4). With auth disabled it is a no-op 204.
+
+### 4.4 `GET /auth/signed-out`
+
+Needs no session. Returns 200 with a static HTML page (`Cache-Control: no-store`; no script, inline style or external asset, so the CSP in section 6 applies unchanged) and never redirects: the Dex session is still active, so an automatic trip to `/auth/sso` would sign the user straight back in. The page links to `/auth/sso?returnTo=...` ("Sign in again") and notes that the identity provider session may still be active. An optional `returnTo` query is sanitized like `/auth/sso` (section 4.1). With auth disabled the page says so and links to `returnTo` (default `/`).
 
 ## 5. Health routes
 

@@ -107,6 +107,7 @@ Startup fails fast, with every problem listed, when auth is on and a provider, c
 - Set `TEMPOLENS_AUTH_WRITE_GROUPS`, and optionally `TEMPOLENS_AUTH_ADMIN_GROUPS` and `TEMPOLENS_AUTH_READ_GROUPS`. Claim groups are compared exactly, without trimming. To see the groups a user really gets, log in once with `TEMPOLENS_LOG_LEVEL=debug`.
 - Set `TEMPOLENS_SESSION_KEYS` (`openssl rand -base64 32`). To rotate, put the new key first and keep the old one until sessions expire.
 - The session is an encrypted, HttpOnly `__Host-tempolens_session` cookie holding the user, role and matched group; no IdP token is kept. The email is used for attribution only when the IdP marks it `email_verified`; otherwise the subject (`sub`) is used. Groups are re-checked against the env on every request, so removing a group revokes access after a restart. Logout is local: Dex has no end-session endpoint.
+- Sign out opens `/auth/signed-out`, a static page that never redirects, with a "Sign in again" link. Sending the browser to `/` instead would let the still-active Dex session sign the user straight back in.
 
 ## Roles and write actions
 
