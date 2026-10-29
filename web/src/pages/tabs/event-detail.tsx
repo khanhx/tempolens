@@ -30,6 +30,10 @@ export function EventDetailTab({ store, ns, wf, run, eventId }: RunContext & { e
   if (!event) {
     return <p class="muted">{complete ? `Event ${eventId} is not in this history.` : 'Loading the history to find this event…'}</p>;
   }
+  // Back to the list with this event selected in its side panel.
+  const back = new URLSearchParams(search);
+  back.set('event', event.eventId);
+  const historyHref = `${href(P.history, { ns, wf, run })}?${back.toString()}`;
   const pos = events.indexOf(event);
   const prev = events[pos - 1];
   const next = events[pos + 1];
@@ -38,7 +42,7 @@ export function EventDetailTab({ store, ns, wf, run, eventId }: RunContext & { e
   return (
     <div class="event-detail">
       <nav class="toolbar">
-        <a class="btn" href={href(P.history, { ns, wf, run }) + search}>
+        <a class="btn" href={historyHref}>
           ← History
         </a>
         {prev && (

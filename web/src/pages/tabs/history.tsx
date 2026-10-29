@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import type { Column } from '../../components/data-table';
 import { DataTable } from '../../components/data-table';
@@ -16,6 +16,14 @@ import { eventAttributes, failureMessages, shortEventType } from '../../lib/temp
 import { durationBetween } from '../../lib/time';
 import { href, P } from '../../routes';
 import type { RunContext } from '../workflow-layout';
+import { EventPanel } from './event-panel';
+import './history-panel.css';
+
+/** Row height of the history tables, used to scroll a selected row into view. */
+const ROW_HEIGHT = 32;
+
+const isTyping = (t: EventTarget | null) =>
+  t instanceof HTMLElement && (t.isContentEditable || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
 
 const nameOf = (v: unknown) => (v && typeof v === 'object' ? String((v as { name?: unknown }).name ?? '') : '');
 
@@ -165,17 +173,26 @@ export function FilterPanel({ filter, events, groups, onApply }: { filter: Histo
 export function HistoryTab({ store, ns, wf, run }: RunContext) {
   const { url, path, route } = useLocation();
   const params = useMemo(() => new URLSearchParams(url.split('?')[1] ?? ''), [url]);
-  const filter = useMemo(() => parseHistoryFilter(params), [params]);
+  const selected = params.get('event') || null;
+  // The list depends on the query without `?event`, so selecting a row keeps
+  // the same rows (and DataTable keeps its scroll position).
+  const listSearch = useMemo(() => {
+    const p = new URLSearchParams(params);
+    p.delete('event');
+    return p.toString();
+  }, [params]);
+  const filter = useMemo(() => parseHistoryFilter(new URLSearchParams(listSearch)), [listSearch]);
   const ascending = params.get('sort') === 'ascending';
   const refreshOff = params.get('refresh_off') === 'true';
   useEffect(() => store.setLiveWanted(!refreshOff), [store, refreshOff]);
 
-  const setParams = (fn: (p: URLSearchParams) => void) => {
+  const withParams = (fn: (p: URLSearchParams) => void) => {
     const next = new URLSearchParams(params);
     fn(next);
     const s = next.toString();
-    route(path + (s ? `?${s}` : ''));
+    return path + (s ? `?${s}` : '');
   };
+  const setParams = (fn: (p: URLSearchParams) => void, replace = false) => route(withParams(fn), replace);
 
   const events = store.history.events.value;
   const groups = useMemo(() => buildGroups(events), [events]);
@@ -189,11 +206,90 @@ export function HistoryTab({ store, ns, wf, run }: RunContext) {
   const order = <T,>(rows: T[]) => (ascending ? rows : [...rows].reverse());
   const shownEvents = useMemo(() => order(filterEvents(events, index, filter)), [events, index, filter, ascending]);
   const shownGroups = useMemo(() => order(filterGroups(groups, filter)), [groups, filter, ascending]);
-  const search = params.toString() ? `?${params.toString()}` : '';
-  const eventHref = (id: string) => href(P.eventDetail, { ns, wf, run, eventId: id }) + search;
+  const search = listSearch ? `?${listSearch}` : '';
+  const selectHref = (id: string) => withParams((p) => p.set('event', id));
+
+  const mode = eventView.value;
+  const tableMode = mode !== 'json';
+  // Ids of the rows in display order, and the row holding the selection.
+  const rowIds = useMemo(() => (mode === 'compact' ? shownGroups.map((g) => g.id) : shownEvents.map((e) => e.eventId)), [mode, shownGroups, shownEvents]);
+  const selectedRow = selected === null ? null : mode === 'compact' ? (index.get(selected)?.id ?? selected) : selected;
+
+  const rowLink = (id: string, label: string) => (
+    <a class="history-row-link" href={selectHref(id)} data-event-id={id} aria-current={id === selectedRow ? 'true' : undefined}>
+      {label}
+    </a>
+  );
+
+  const listRef = useRef<HTMLDivElement>(null);
+  const close = () => {
+    // Focus goes back to the row the panel described, if it is rendered.
+    if (selectedRow) listRef.current?.querySelector<HTMLElement>(`a[data-event-id="${CSS.escape(selectedRow)}"]`)?.focus({ preventScroll: true });
+    setParams((p) => p.delete('event'));
+  };
+  const step = (by: number) => {
+    if (rowIds.length === 0) return;
+    const at = selectedRow === null ? -1 : rowIds.indexOf(selectedRow);
+    const next = at === -1 ? rowIds[0] : rowIds[Math.min(rowIds.length - 1, Math.max(0, at + by))];
+    if (next !== undefined && next !== selectedRow) setParams((p) => p.set('event', next), true);
+  };
+
+  // Panel keys. A dedicated listener sees the original target, so keys typed
+  // in a field (Escape included: it only leaves the field) and keys meant for
+  // an open dialog are left alone.
+  const keys = useRef({ close, step });
+  keys.current = { close, step };
+  const panelOpen = tableMode && selected !== null;
+  useEffect(() => {
+    if (!panelOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented || isTyping(e.target) || document.querySelector('dialog[open]')) return;
+      const by = e.key === 'ArrowDown' || e.key === 'j' ? 1 : e.key === 'ArrowUp' || e.key === 'k' ? -1 : 0;
+      if (by !== 0) {
+        e.preventDefault();
+        keys.current.step(by);
+      } else if (e.key === 'Escape') {
+        keys.current.close();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [panelOpen]);
+
+  // Keeps the selected row in view, after DataTable's own scroll reset when
+  // the rows change. A row outside the rendered window is reached by offset.
+  useEffect(() => {
+    if (!panelOpen || selectedRow === null) return;
+    const frame = requestAnimationFrame(() => {
+      const list = listRef.current;
+      const link = list?.querySelector(`a[data-event-id="${CSS.escape(selectedRow)}"]`);
+      if (link) {
+        link.closest('tr')?.scrollIntoView?.({ block: 'nearest' });
+        return;
+      }
+      const scroller = list?.querySelector<HTMLElement>('.dt-scroll');
+      const at = rowIds.indexOf(selectedRow);
+      if (scroller && at >= 0) scroller.scrollTop = at * ROW_HEIGHT;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [panelOpen, selectedRow, rowIds]);
+
+  // A click anywhere on a row selects it, unless it lands on a control or
+  // ends a text selection.
+  const onListClick = (e: MouseEvent) => {
+    const target = e.target as Element | null;
+    if (!target || target.closest('a, button, input, select, textarea, summary') || window.getSelection()?.toString()) return;
+    const id = target.closest('tbody tr')?.querySelector<HTMLElement>('a.history-row-link')?.dataset.eventId;
+    if (id) setParams((p) => p.set('event', id));
+  };
+
+  const pendingOf = (g: EventGroup | undefined) => {
+    const activityId = g?.category === 'activity' ? eventAttributes(g.events[0] ?? { eventId: '', eventType: '' }).activityId : undefined;
+    return typeof activityId === 'string' ? pending.get(activityId) : undefined;
+  };
 
   const eventColumns: Column<HistoryEvent>[] = [
-    { id: 'id', label: 'ID', width: '70px', render: (e) => <a href={eventHref(e.eventId)}>{e.eventId}</a> },
+    { id: 'id', label: 'ID', width: '70px', render: (e) => rowLink(e.eventId, e.eventId) },
     { id: 'time', label: 'Time', width: '170px', render: (e) => <Timestamp value={e.eventTime} /> },
     { id: 'type', label: 'Type', width: '30%', render: (e) => shortEventType(e.eventType), title: (e) => e.eventType },
     { id: 'group', label: 'Status', width: '110px', render: (e) => { const g = index.get(e.eventId); return g ? <GroupStatusBadge status={g.status} /> : null; } },
@@ -201,7 +297,7 @@ export function HistoryTab({ store, ns, wf, run }: RunContext) {
   ];
 
   const groupColumns: Column<EventGroup>[] = [
-    { id: 'id', label: 'ID', width: '70px', render: (g) => <a href={eventHref(g.events[g.events.length - 1]?.eventId ?? g.id)}>{g.id}</a> },
+    { id: 'id', label: 'ID', width: '70px', render: (g) => rowLink(g.id, g.id) },
     { id: 'category', label: 'Kind', width: '120px', render: (g) => CATEGORIES.find((c) => c.id === g.category)?.label ?? g.category },
     { id: 'name', label: 'Name', width: '22%', render: (g) => g.name, title: (g) => g.name },
     { id: 'status', label: 'Status', width: '110px', render: (g) => <GroupStatusBadge status={g.status} /> },
@@ -209,18 +305,14 @@ export function HistoryTab({ store, ns, wf, run }: RunContext) {
       id: 'attempt',
       label: 'Attempt',
       width: '80px',
-      render: (g) => {
-        const activityId = eventAttributes(g.events[0] ?? { eventId: '', eventType: '' }).activityId;
-        const p = typeof activityId === 'string' ? pending.get(activityId) : undefined;
-        return p?.attempt ?? g.attempt ?? '';
-      },
+      render: (g) => pendingOf(g)?.attempt ?? g.attempt ?? '',
     },
     { id: 'start', label: 'Started', width: '160px', render: (g) => <Timestamp value={g.events[0]?.eventTime} /> },
     { id: 'duration', label: 'Duration', width: '100px', render: (g) => <Duration ms={g.events.length > 1 ? durationBetween(g.events[0]?.eventTime, g.events[g.events.length - 1]?.eventTime) : null} /> },
     { id: 'detail', label: 'Details', render: (g) => failureMessages(g.failure).join(': '), title: (g) => failureMessages(g.failure).join('\n') },
   ];
 
-  const mode = eventView.value;
+  const selectedGroup = selected === null ? undefined : index.get(selected);
   return (
     <div class="history">
       <div class="toolbar">
@@ -252,10 +344,26 @@ export function HistoryTab({ store, ns, wf, run }: RunContext) {
       <FilterPanel filter={filter} events={events} groups={groups} onApply={(f) => setParams((p) => void writeHistoryFilter(f, p))} />
       {mode === 'json' ? (
         <JsonText value={shownEvents} />
-      ) : mode === 'full' ? (
-        <DataTable columns={eventColumns} rows={shownEvents} rowKey={(e) => e.eventId} caption="History events" empty={store.history.loading.value ? 'Loading…' : 'No events match.'} />
       ) : (
-        <DataTable columns={groupColumns} rows={shownGroups} rowKey={(g) => g.id} caption="Grouped history" empty={store.history.loading.value ? 'Loading…' : 'No events match.'} />
+        <div class={panelOpen ? 'history-split history-split-open' : 'history-split'}>
+          <div ref={listRef} onClick={onListClick}>
+            {mode === 'full' ? (
+              <DataTable columns={eventColumns} rows={shownEvents} rowKey={(e) => e.eventId} rowHeight={ROW_HEIGHT} caption="History events" empty={store.history.loading.value ? 'Loading…' : 'No events match.'} />
+            ) : (
+              <DataTable columns={groupColumns} rows={shownGroups} rowKey={(g) => g.id} rowHeight={ROW_HEIGHT} caption="Grouped history" empty={store.history.loading.value ? 'Loading…' : 'No events match.'} />
+            )}
+          </div>
+          {panelOpen && selected !== null && (
+            <EventPanel
+              eventId={selected}
+              group={selectedGroup}
+              pending={pendingOf(selectedGroup)}
+              ns={ns}
+              fullHref={href(P.eventDetail, { ns, wf, run, eventId: selected }) + search}
+              onClose={close}
+            />
+          )}
+        </div>
       )}
     </div>
   );

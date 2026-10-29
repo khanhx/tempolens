@@ -9,7 +9,8 @@ export const SHORTCUTS: readonly [string, string][] = [
   ['?', 'Show keyboard shortcuts'],
   ['← / →', 'Previous / next page of workflows'],
   ['r', 'Refresh the current view'],
-  ['Esc', 'Close a dialog or leave an input'],
+  ['↑ / ↓ or j / k', 'Previous / next event in the history panel'],
+  ['Esc', 'Close a dialog or the history panel, or leave an input'],
 ];
 
 const isTyping = (t: EventTarget | null) =>

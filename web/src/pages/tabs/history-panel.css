@@ -1,0 +1,84 @@
+/* History tab: event list with a detail panel beside it (a drawer on narrow screens). */
+.history-split-open {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(380px, 42%);
+  gap: var(--s-3);
+  align-items: start;
+}
+
+.history-split tbody tr {
+  cursor: pointer;
+  /* Keeps a row selected with ↑/↓ clear of the sticky header. */
+  scroll-margin-top: 40px;
+}
+
+.history-split tbody tr:has(.history-row-link[aria-current='true']) td {
+  background: var(--c-selected);
+}
+
+.history-panel {
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - var(--header-h) - var(--s-4));
+  overflow: auto;
+  padding: var(--s-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  background: var(--c-surface);
+}
+
+.history-panel:focus {
+  outline: none;
+}
+
+.history-panel:focus-visible {
+  outline: 2px solid var(--c-focus);
+}
+
+.history-panel-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+}
+
+.history-panel-head h2 {
+  flex: 1;
+  margin: 0;
+  font-size: var(--fs-lg);
+  overflow-wrap: anywhere;
+}
+
+.history-panel .failure {
+  margin-top: var(--s-3);
+}
+
+.history-panel-event {
+  margin-top: var(--s-2);
+}
+
+.history-panel-event > summary {
+  cursor: pointer;
+  padding: var(--s-1) 0;
+}
+
+.history-panel-event > summary[aria-current='true'] {
+  font-weight: 600;
+}
+
+@media (max-width: 1099px) {
+  .history-split-open {
+    display: block;
+  }
+
+  .history-panel {
+    position: fixed;
+    top: var(--header-h);
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    width: min(560px, 100vw);
+    max-height: none;
+    border-radius: 0;
+    box-shadow: var(--shadow);
+  }
+}
