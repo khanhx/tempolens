@@ -236,13 +236,15 @@ export function HistoryTab({ store, ns, wf, run }: RunContext) {
 
   // Panel keys. A dedicated listener sees the original target, so keys typed
   // in a field (Escape included: it only leaves the field) and keys meant for
-  // an open dialog are left alone.
-  const keys = useRef({ close, step });
-  keys.current = { close, step };
+  // an open dialog are left alone. It stays bound while the tab is mounted and
+  // reads the open state through a ref: binding it only once the panel opened
+  // dropped keys pressed right after the panel appeared.
   const panelOpen = tableMode && selected !== null;
+  const keys = useRef({ close, step, panelOpen });
+  keys.current = { close, step, panelOpen };
   useEffect(() => {
-    if (!panelOpen) return;
     const onKey = (e: KeyboardEvent) => {
+      if (!keys.current.panelOpen) return;
       if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented || isTyping(e.target) || document.querySelector('dialog[open]')) return;
       const by = e.key === 'ArrowDown' || e.key === 'j' ? 1 : e.key === 'ArrowUp' || e.key === 'k' ? -1 : 0;
       if (by !== 0) {
@@ -254,7 +256,7 @@ export function HistoryTab({ store, ns, wf, run }: RunContext) {
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [panelOpen]);
+  }, []);
 
   // Keeps the selected row in view, after DataTable's own scroll reset when
   // the rows change. A row outside the rendered window is reached by offset.
